@@ -33,7 +33,7 @@ jobs:
       PYTHONUNBUFFERED: "1"  # 实时输出进度，避免 CI 日志长时间无输出
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Install uv
         uses: astral-sh/setup-uv@v6
