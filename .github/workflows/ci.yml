@@ -73,6 +73,15 @@ jobs:
           cache: npm
           cache-dependency-path: pi-plugin/package-lock.json
 
+      - name: Check lockfile registry
+        run: |
+          private=$(grep -E '"resolved": "https?://' package-lock.json | grep -v 'https://registry.npmjs.org/' || true)
+          if [ -n "$private" ]; then
+            echo "package-lock.json contains non-public registry URLs:"
+            echo "$private" | head -20
+            exit 1
+          fi
+
       # The lockfile is generated with npm 11, while the Node 22 image ships
       # npm 10. Align npm to avoid lockfile/installer incompatibilities.
       - name: Update npm
@@ -82,10 +91,10 @@ jobs:
       # the type definitions needed for typechecking are still installed.
       - name: Install dependencies
         run: |
-          npm ci --ignore-scripts --no-audit --no-fund --omit=optional || {
+          npm ci --ignore-scripts --no-audit --no-fund || {
             echo "npm ci failed, retrying with npm install"
             rm -rf node_modules
-            npm install --ignore-scripts --no-audit --no-fund --omit=optional
+            npm install --ignore-scripts --no-audit --no-fund
           }
 
       - name: Typecheck
