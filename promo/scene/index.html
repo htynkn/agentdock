@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>AgentDock — promo</title>
+<style>
+  :root {
+    --sans: "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", -apple-system, system-ui, sans-serif;
+    --mono: "SF Mono", "JetBrains Mono", ui-monospace, Menlo, monospace;
+    --ink: #eef2f8;
+    --ink-dim: #9aa6b8;
+    --ink-faint: #66738a;
+    --accent: #6fd0ff;
+    --green: #4fe08d;
+    --red: #ff6a5a;
+    --orange: #ff9552;
+    --card: rgba(14, 19, 28, 0.62);
+    --line: rgba(255, 255, 255, 0.09);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; width: 1920px; height: 1080px;
+    background: #05070b; overflow: hidden;
+    font-family: var(--sans); color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+  }
+  #stage { position: absolute; inset: 0; }
+  canvas { display: block; }
+
+  /* ---------- 通用图层 ---------- */
+  .layer { position: absolute; inset: 0; pointer-events: none; }
+  /* 底部渐暗，保证字幕在任何画面上都读得清 */
+  .layer::after {
+    content: ''; position: absolute; inset: auto 0 0 0; height: 300px;
+    background: linear-gradient(to top, rgba(3, 5, 8, 0.78), rgba(3, 5, 8, 0.30) 45%, rgba(3, 5, 8, 0));
+    pointer-events: none;
+  }
+  #caption, #outro, #legend { z-index: 3; }
+
+  /* ---------- 标题 ---------- */
+  #title { position: absolute; left: 76px; top: 62px; opacity: 0; }
+  #title .wordmark {
+    display: flex; align-items: center; gap: 14px;
+    font-size: 40px; font-weight: 600; letter-spacing: -0.6px;
+  }
+  #title .dot {
+    width: 13px; height: 13px; border-radius: 50%;
+    background: var(--accent); box-shadow: 0 0 18px 2px rgba(111, 208, 255, 0.75);
+  }
+  #title .sub {
+    margin-top: 10px; font-size: 17px; color: var(--ink-dim); letter-spacing: 0.2px;
+  }
+  #title .sub em { color: var(--ink-faint); font-style: normal; }
+
+  /* ---------- 右上状态胶囊 ---------- */
+  #pill {
+    position: absolute; right: 76px; top: 72px;
+    display: flex; align-items: center; gap: 10px;
+    padding: 11px 18px 11px 15px; border-radius: 999px;
+    background: var(--card); border: 1px solid var(--line);
+    backdrop-filter: blur(14px) saturate(1.2);
+    font-size: 15px; letter-spacing: 0.2px; opacity: 0;
+  }
+  #pill .led { width: 9px; height: 9px; border-radius: 50%; background: #2a3550; }
+  #pill .txt { color: var(--ink); }
+  #pill .en { color: var(--ink-faint); font-size: 13px; }
+  #pill .ble {
+    display: flex; align-items: center; gap: 4px; margin-left: 4px;
+    color: var(--ink-faint); font-size: 12px; letter-spacing: 0.6px;
+  }
+
+  /* ---------- 底部字幕 ---------- */
+  #caption { position: absolute; left: 76px; bottom: 78px; opacity: 0; }
+  #caption .zh {
+    font-size: 27px; font-weight: 500; letter-spacing: -0.2px; line-height: 1.35;
+  }
+  #caption .zh b { color: var(--accent); font-weight: 600; }
+  #caption .en {
+    margin-top: 7px; font-size: 16px; color: var(--ink-faint); letter-spacing: 0.1px;
+  }
+  #caption .en b { color: var(--ink-dim); font-weight: 500; }
+
+  /* ---------- 端子（pi 会话面板） ---------- */
+  #term {
+    position: absolute; right: 76px; top: 186px; width: 474px;
+    border-radius: 20px;
+    background: linear-gradient(180deg, rgba(10,14,21,0.90) 0%, rgba(8,11,17,0.86) 100%);
+    border: 1px solid var(--line);
+    box-shadow: 0 34px 80px -30px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(255, 255, 255, 0.02) inset;
+    backdrop-filter: blur(22px) saturate(1.25);
+    opacity: 0; overflow: hidden;
+  }
+  #term .head {
+    display: flex; align-items: center; gap: 10px;
+    padding: 15px 18px 13px; border-bottom: 1px solid var(--line);
+    font-size: 13.5px; color: var(--ink-dim);
+  }
+  #term .head .lights { display: flex; gap: 6px; }
+  #term .head .lights i {
+    width: 9px; height: 9px; border-radius: 50%; display: block; background: #2a3550;
+  }
+  #term .head .name { font-family: var(--mono); color: var(--ink); letter-spacing: 0.2px; }
+  #term .head .spacer { flex: 1; }
+  #term .head .chip {
+    font-family: var(--mono); font-size: 11.5px; letter-spacing: 0.4px;
+    padding: 4px 9px; border-radius: 999px; color: var(--green);
+    background: rgba(79, 224, 141, 0.1); border: 1px solid rgba(79, 224, 141, 0.22);
+  }
+  #term .head .chip.idle { color: var(--accent); background: rgba(111, 208, 255, 0.1);
+    border-color: rgba(111, 208, 255, 0.22); }
+  #term .head .chip.busy { color: var(--orange); background: rgba(255, 149, 82, 0.1);
+    border-color: rgba(255, 149, 82, 0.22); }
+  #term .head .chip.err { color: var(--red); background: rgba(255, 106, 90, 0.1);
+    border-color: rgba(255, 106, 90, 0.22); }
+
+  #term .body {
+    position: relative; height: 452px; overflow: hidden;
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 26px, #000 100%);
+    mask-image: linear-gradient(to bottom, transparent 0, #000 26px, #000 100%);
+    padding: 16px 18px 14px;
+    font-family: var(--mono); font-size: 13.5px; line-height: 1.62;
+  }
+  #term .scroll { will-change: transform; }
+  #term .row { display: flex; gap: 9px; margin-bottom: 11px; }
+  #term .row .gut {
+    flex: 0 0 16px; color: var(--ink-faint); font-size: 12px; padding-top: 2px;
+    text-align: right; user-select: none;
+  }
+  #term .row .tx { flex: 1; color: var(--ink-dim); word-break: break-word; }
+  #term .row.user .tx { color: var(--ink); }
+  #term .row.user .tx .k {
+    display: inline-block; margin-right: 7px; padding: 1px 7px; border-radius: 6px;
+    font-size: 11px; letter-spacing: 0.5px; color: #0b1017; background: var(--accent);
+    vertical-align: 1px;
+  }
+  #term .row.tool .tx { color: #8fa0b8; }
+  #term .row.tool .tx .f { color: var(--accent); }
+  #term .row.ok .tx { color: var(--green); }
+  #term .row.err .tx { color: var(--red); }
+  #term .row.sys .tx { color: var(--ink-faint); font-size: 12.5px; letter-spacing: 0.3px; }
+  #term .row.md { color: var(--ink); }
+  #term .row.md .tx { color: var(--ink); }
+  #term .caret {
+    display: inline-block; width: 7px; height: 14px; background: var(--accent);
+    vertical-align: -2px; margin-left: 2px; opacity: 0.9;
+  }
+  #term .foot {
+    display: flex; align-items: center; gap: 12px; justify-content: space-between;
+    padding: 10px 18px 13px; border-top: 1px solid var(--line);
+    font-family: var(--mono); font-size: 11.5px; color: var(--ink-faint);
+  }
+  #term .foot .hint { display: flex; gap: 12px; }
+  #term .foot .hint span b { color: var(--ink-dim); font-weight: 600; }
+  #term .foot .scrollbar {
+    position: absolute; right: 6px; width: 3px; border-radius: 3px;
+    background: rgba(255, 255, 255, 0.16);
+  }
+
+  /* ---------- 3D 锚定标注 ---------- */
+  #callouts { position: absolute; inset: 0; }
+  #callouts svg { position: absolute; inset: 0; overflow: visible; }
+  #callouts line { stroke: rgba(255, 255, 255, 0.34); stroke-width: 1; }
+  #callouts circle.anchor { fill: none; stroke: rgba(255, 255, 255, 0.6); stroke-width: 1; }
+  .callout {
+    position: absolute; opacity: 0; white-space: nowrap; z-index: 2;
+    font-size: 20px; font-weight: 500; letter-spacing: 0.2px; color: var(--ink);
+    padding: 9px 15px 10px; border-radius: 13px;
+    background: linear-gradient(180deg, rgba(10, 14, 22, 0.78), rgba(7, 10, 16, 0.66));
+    border: 1px solid rgba(255, 255, 255, 0.075);
+    box-shadow: 0 12px 34px rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(10px) saturate(120%);
+  }
+  .callout .k {
+    font-family: var(--mono); font-size: 12px; letter-spacing: 1.1px;
+    color: var(--accent); display: block; margin-bottom: 4px;
+  }
+  .callout .en { display: block; font-size: 15px; color: rgba(200, 214, 232, 0.72); margin-top: 2px; }
+  .callout.right { text-align: left; }
+  .callout.left { text-align: right; }
+
+  /* ---------- 连接波纹 ---------- */
+  #rings { position: absolute; inset: 0; }
+  #rings .ring {
+    position: absolute; border-radius: 50%; border: 1.5px solid rgba(111, 208, 255, 0.55);
+    transform: translate(-50%, -50%) scale(0.2); opacity: 0;
+  }
+
+  /* ---------- 静音角标 ---------- */
+  #mute {
+    position: absolute; opacity: 0; display: flex; align-items: center; gap: 9px;
+    padding: 9px 14px; border-radius: 12px; background: rgba(255, 106, 90, 0.12);
+    border: 1px solid rgba(255, 106, 90, 0.3); backdrop-filter: blur(12px);
+    font-size: 14px; color: #ffb3aa; white-space: nowrap;
+  }
+  #mute .ic { font-size: 15px; }
+
+  /* ---------- 结尾图例卡 ---------- */
+  #legend {
+    position: absolute; left: 50%; bottom: 206px; transform: translateX(-50%) translateY(14px);
+    display: flex; gap: 0; opacity: 0; white-space: nowrap;
+    border-radius: 18px; background: var(--card); border: 1px solid var(--line);
+    backdrop-filter: blur(20px) saturate(1.2);
+    box-shadow: 0 30px 70px -28px rgba(0, 0, 0, 0.85);
+    padding: 18px 8px;
+  }
+  #legend .cell { padding: 0 22px; border-left: 1px solid var(--line); }
+  #legend .cell:first-child { border-left: none; }
+  #legend .cap {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 1.4px;
+    color: var(--ink-faint); text-transform: uppercase; margin-bottom: 6px;
+  }
+  #legend .what { font-size: 15px; color: var(--ink); }
+  #legend .what em { color: var(--ink-faint); font-style: normal; font-size: 12.5px; }
+
+  /* ---------- 片尾 ---------- */
+  #outro { position: absolute; left: 76px; bottom: 78px; opacity: 0; }
+  #outro .repo { font-family: var(--mono); font-size: 15px; color: var(--ink-dim); }
+  #outro .repo b { color: var(--accent); font-weight: 500; }
+  #outro .tag {
+    margin-top: 9px; font-size: 13.5px; color: var(--ink-faint); letter-spacing: 0.2px;
+  }
+</style>
+</head>
+<body>
+  <div id="stage"></div>
+
+  <div class="layer">
+    <div id="title">
+      <div class="wordmark"><span class="dot"></span>AgentDock</div>
+      <div class="sub">pi 的桌面控制器 <em>· desktop controller for the pi coding agent</em></div>
+    </div>
+
+    <div id="pill">
+      <span class="led"></span>
+      <span class="txt">等待连接</span>
+      <span class="en">waiting</span>
+      <span class="ble">BLE</span>
+    </div>
+
+    <div id="term">
+      <div class="head">
+        <span class="lights"><i></i><i></i><i></i></span>
+        <span class="name">pi · agentdock</span>
+        <span class="spacer"></span>
+        <span class="chip idle">idle</span>
+      </div>
+      <div class="body"><div class="scroll"></div></div>
+      <div class="foot">
+        <span class="hint">
+          <span><b>KEY2</b> 继续</span>
+          <span><b>KEY3</b> 不对</span>
+          <span><b>◯</b> 滚动</span>
+        </span>
+        <span class="t"></span>
+      </div>
+    </div>
+
+    <div id="callouts"><svg></svg></div>
+    <div id="rings"></div>
+
+    <div id="mute"><span class="ic"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 9.5h3l4-3.5v12l-4-3.5H4z"/><path d="M16 9.5l4 5M20 9.5l-4 5"/></svg></span><span><span class="zh">蜂鸣器已静音</span><br><span class="en" style="color:#c98b84;font-size:12px">buzzer muted · saved to NVS</span></span></div>
+
+    <div id="caption"><div class="zh"></div><div class="en"></div></div>
+
+    <div id="legend">
+      <div class="cell"><div class="cap">KEY1 · press</div><div class="what">中断当前任务 <em>abort</em></div></div>
+      <div class="cell"><div class="cap">KEY1 · hold 0.8s</div><div class="what">静音蜂鸣器 <em>mute</em></div></div>
+      <div class="cell"><div class="cap">KEY2 / KEY3</div><div class="what">发送宏「继续」「不对」<em>macros</em></div></div>
+      <div class="cell"><div class="cap">encoder</div><div class="what">滚动 · 按下=确认 <em>scroll</em></div></div>
+      <div class="cell"><div class="cap">WS2812</div><div class="what">空闲/运行/完成/出错 <em>state</em></div></div>
+    </div>
+
+    <div id="outro">
+      <div class="repo">github.com/htynkn/<b>agentdock</b></div>
+      <div class="tag">ESP32-C2 · BLE GATT · 3D printed enclosure · fw + pi extension</div>
+    </div>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "/node_modules/three/build/three.module.js",
+      "three/addons/": "/node_modules/three/examples/jsm/"
+    }
+  }
+  </script>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>

@@ -46,6 +46,19 @@ coverage/
 *.tsbuildinfo
 
 # ---------------------------------------------------------------------------
+# Promo video (promo/) — 宣传片渲染工程
+# ---------------------------------------------------------------------------
+# 高精度网格：prep_meshes.py 从 hardware/enclosure CAD 确定性重建
+promo/assets/
+# 渲染中间产物：4K 帧序列 / 音轨 / events.json（./build.sh --capture 重新生成）
+promo/render/
+# 最终成片：mp4 / gif / poster（./build.sh 重新编码，不入库）
+promo/out/
+# Python
+promo/__pycache__/
+promo/.python-version
+
+# ---------------------------------------------------------------------------
 # Environment / credentials
 # ---------------------------------------------------------------------------
 .env
