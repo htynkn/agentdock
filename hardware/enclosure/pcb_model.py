@@ -45,11 +45,17 @@ EXPECT = {
     "encoder_bushing_r": 3.50,               # M7
     "encoder_bushing_z": (6.59, 15.59),
     "usb_bbox": (0.07, 13.18, 0.59, 6.87, 22.12, 4.75),
+    # USB-C 插头空腔（座体前端面的内圈）= 插头真正进入的腔，面板开口的定位基准。
+    # 不能用 usb_bbox 的中心：包围盒含向下伸的固定脚（z 低到 0.586），
+    # 其中心 z=2.667 比插头轴线 z=3.146 低 0.48 mm，开口会整体偏下。
+    "usb_cavity": (0.07, 13.45, 1.82, 0.07, 21.85, 4.48),
     # 2026-10-25(2) 版 PCB：1×6 排针已删除，只余焊盘（板体铜箔，无 3D 几何）
     "sw1_body_bbox": (10.06, 36.43, -1.91, 22.96, 42.03, 7.74),
     "sw1_lever_bbox": (16.41, 41.63, 3.81, 19.91, 46.63, 6.31),
     "buzzer_bbox": (79.34, 7.72, 1.59, 88.04, 16.42, 5.61),
-    "led_bbox": (15.78, 23.01, 1.59, 20.28, 27.53, 3.10),
+    # WS2812 (LED1)：封装体 5.4 × 5.0 × 1.57。注意不要用 4.3–4.7 去匹配，
+    # 那个尺寸对应板上的 4.5× 4.52× 1.51 功率电感 (18.03, 25.27)。
+    "led_bbox": (32.61, 31.27, 1.59, 38.01, 36.28, 3.16),
 }
 TOL = 0.02
 
@@ -165,6 +171,10 @@ class PcbModel:
         if not _close(self.below_board_min_z, e["below_board_min_z"], 0.05):
             bad.append(f"板底最低点 {self.below_board_min_z:.2f} "
                        f"≠ {e['below_board_min_z']}")
+        # USB-C 插头空腔（面板开口的定位基准）
+        if not _bbox_close(self.parts["usb_cavity"], e["usb_cavity"]):
+            bad.append(f"USB 空腔 {tuple(round(v, 2) for v in self.parts['usb_cavity'])} "
+                       f"≠ 期望 {e['usb_cavity']}")
         return bad
 
     def max_z_near(self, x: float, y: float, radius: float) -> float:
@@ -333,25 +343,29 @@ def load(path: Path | None = None, verbose: bool = True) -> PcbModel:
     }
 
     # ---- 6. 各连接器 / 高元件包围盒 --------------------------------------
-    def find(pred, name):
+    found = {}                      # name → 实体（取子特征用，如 USB 空腔）
+
+    def find(pred, name, key=None):
         for s in solids:
             bb = _bb(s)
             sx, sy, sz = _size(s)
             if pred(bb, sx, sy, sz):
+                found[key or name] = s
                 return bb
         raise RuntimeError(f"找不到 {name}")
 
     parts = {}
     parts["usb"] = find(
         lambda bb, sx, sy, sz: bb[0] < 1.0 and 8.5 < sy < 9.5 and 3.5 < sz < 5.0,
-        "USB-C 座")
+        "USB-C 座", key="usb")
     # 1×6 排针已于 2026-10-25(2) 版删除；若未来重新加装，恢复 EXPECT 表
     # 中的 header_bbox 与下方查找规则即可。
     parts["buzzer"] = find(
         lambda bb, sx, sy, sz: 8.4 < sx < 9.0 and 8.4 < sy < 9.0 and bb[0] > 60,
         "蜂鸣器")
+    # WS2812 封装体 5.4 × 5.0 × 1.57（区别于 4.5 mm 的功率电感）
     parts["led"] = find(
-        lambda bb, sx, sy, sz: 4.3 < sx < 4.7 and 4.3 < sy < 4.7 and bb[2] < 2.0,
+        lambda bb, sx, sy, sz: 4.8 < sx < 5.7 and 4.8 < sy < 5.7 and 1.3 < sz < 1.9,
         "WS2812")
     parts["sw1_body"] = find(
         lambda bb, sx, sy, sz: 12.5 < sx < 13.5 and 5.2 < sy < 6.0 and sz > 9.0,
@@ -359,6 +373,26 @@ def load(path: Path | None = None, verbose: bool = True) -> PcbModel:
     parts["sw1_lever"] = find(
         lambda bb, sx, sy, sz: bb[4] > board_bb[4] + 0.5 and sz < 3.0,
         "拨动开关拨柄")
+
+    # ---- 6b. USB-C 插头空腔：座体最前端面（法线 -X）的内圈 -----------------
+    # 插头（Ø8.25 × 2.4）实际进的是这个腔，而不是整个塑料座体。
+    best = None
+    for f in found["usb"].faces():
+        if f.normal_at().X > -0.9:
+            continue
+        if abs(f.bounding_box().min.X - parts["usb"][0]) > 0.2:
+            continue                        # 只取最前端那个面
+        for w in f.inner_wires():
+            wb = w.bounding_box()
+            a = wb.size.Y * wb.size.Z
+            if best is None or a > best[0]:
+                best = (a, wb)
+    if best is None:
+        raise RuntimeError("找不到 USB-C 插头空腔（座体前端面的内圈）")
+    wb = best[1]
+    parts["usb_cavity"] = tuple(round(v, 3) for v in
+                                (wb.min.X, wb.min.Y, wb.min.Z,
+                                 wb.max.X, wb.max.Y, wb.max.Z))
 
     # ---- 7. 其它：板底最低点、顶面高元件 ---------------------------------
     below_min = min(_bb(s)[2] for s in solids if s is not board)
