@@ -1,0 +1,19 @@
+hardware/.gitignore
+  s_641d3bfe35cb61::t_70d585a2e4e084 11,13-14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bdb9ed5e2fa905d0248ba5d83445369cdfd659c0",
+  "prompts": {},
+  "sessions": {
+    "s_641d3bfe35cb61": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a17274-0df0-7527-ad63-94dbe2d2da40",
+        "model": "glm-5.3"
+      },
+      "human_author": "htynkn <htynkn@gmail.com>"
+    }
+  }
+}
