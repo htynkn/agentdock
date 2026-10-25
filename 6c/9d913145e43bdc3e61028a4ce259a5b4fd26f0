@@ -1,0 +1,46 @@
+hardware/enclosure/render.py
+  s_73d4accb3e47c7::t_509b29f0489c12 17-19,23,26-28,30-31,33-34,38-39
+  s_73d4accb3e47c7::t_9165be915a7591 16,20-22,24-25,29,32,35-37,126-129,134,149
+  s_73d4accb3e47c7::t_194b893f82e883 1-15,40-125,130-133,135-148,150-154
+hardware/enclosure/pcb_model.py
+  s_73d4accb3e47c7::t_53f5eefad754e0 98,386
+  s_73d4accb3e47c7::t_a3e94c43bdde8d 1-97,99-134,140-141,145-170,204,208-263,274-283,285,288-316,319-320,322-385,387-406
+  s_73d4accb3e47c7::t_4411238716b7bb 181,188-197
+  s_73d4accb3e47c7::t_8b3e6db2ef5124 171-180,182-187,198-203,205-207
+  s_73d4accb3e47c7::t_614e304cfad252 317-318,321
+  s_73d4accb3e47c7::t_c3aa0cad4320ee 135-139,142-144,264-273,284,286-287
+hardware/README.md
+  s_73d4accb3e47c7::t_d04093748f5e18 107-124
+  s_73d4accb3e47c7::t_0b1e33286f10ee 1-106,125-147
+.github/workflows/hardware.yml
+  s_73d4accb3e47c7::t_a1383c4f768dad 1-91
+hardware/.gitignore
+  s_73d4accb3e47c7::t_86cecdee55fc92 1-15
+hardware/enclosure/enclosure.py
+  s_73d4accb3e47c7::t_d981a263a0425f 1-49,55,57-184,187-188,191-218,233-235,237-247,251-252,258-325,329-358
+  s_73d4accb3e47c7::t_6ba40fce6b8c4d 50-54,56,225,231-232,256-257,328
+  s_73d4accb3e47c7::t_d9039c47eb433e 185-186,189-190
+  s_73d4accb3e47c7::t_60603cab790d60 219-224,226-230,236,248-250,253-255,326-327
+hardware/enclosure/.python-version
+  s_73d4accb3e47c7::t_edab3dd4fed27b 1
+hardware/enclosure/pyproject.toml
+  s_73d4accb3e47c7::t_88cca605443075 1-9
+hardware/enclosure/uv.lock
+  s_73d4accb3e47c7::t_e2f9923735b7ea 1-1530
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6c9d913145e43bdc3e61028a4ce259a5b4fd26f0",
+  "prompts": {},
+  "sessions": {
+    "s_73d4accb3e47c7": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a17208-5ad3-76cb-b9b2-bb05868850a9",
+        "model": "glm-5.3-flashx"
+      },
+      "human_author": "htynkn <htynkn@gmail.com>"
+    }
+  }
+}
