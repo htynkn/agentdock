@@ -1,0 +1,24 @@
+hardware/enclosure/enclosure.py
+  s_8fe4b85ce4a70a::t_26a89631d811bb 35-40,294-295,297-298,301,310-323,327,354,362,367,369-370,373
+  s_8fe4b85ce4a70a::t_97e9ad773e1c68 334,360
+hardware/enclosure/pcb_model.py
+  s_8fe4b85ce4a70a::t_11bb83067a287c 233,236
+.github/workflows/hardware.yml
+  s_8fe4b85ce4a70a::t_9f46df2b785f4c 28,32-33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4dc509c92e331e92b74b9584b8be4c340aad1fb7",
+  "prompts": {},
+  "sessions": {
+    "s_8fe4b85ce4a70a": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a17290-f9ba-711e-9517-0a8f2684d5f7",
+        "model": "glm-5.3-flashx"
+      },
+      "human_author": "htynkn <htynkn@gmail.com>"
+    }
+  }
+}
