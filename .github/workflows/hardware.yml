@@ -43,18 +43,13 @@ jobs:
       - name: Sync dependencies
         run: uv sync --frozen
 
-      # The PCB STEP (17 MB) is git-ignored; the checkout does not contain it.
-      # Download the pinned export from the GitHub release instead.
-      - name: Download PCB STEP
+      - name: Verify PCB STEP integrity
+        working-directory: hardware
         env:
-          GH_TOKEN: ${{ github.token }}
-          PCB_ASSET: 3D_PCB1_2026-10-25.step
-          PCB_SHA256: 9ce41d10ebe39031982e546f698ff40b6cd7ab0ed58d08902cfb6a0aebd9db12
+          PCB_SHA256: 09344680d8e298ae04b27d17cef077e54d4228a25679601cf3313785c501e16d
         run: |
-          mkdir -p ../pcb
-          gh release download pcb-model --pattern "$PCB_ASSET" \
-            --repo "$GITHUB_REPOSITORY" --output "../pcb/$PCB_ASSET"
-          echo "$PCB_SHA256  ../pcb/$PCB_ASSET" | sha256sum --check --status
+          echo "$PCB_SHA256  pcb/PCB.step" | sha256sum --check
+          # PCB.step 被改版时：更新此哈希 + pcb_model.py 的 EXPECT 表
 
       - name: Validate PCB anchors
         run: uv run pcb_model.py

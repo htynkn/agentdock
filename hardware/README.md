@@ -7,8 +7,8 @@ for FDM 3D printing.
 
 ```
 hardware/
-├── pcb/                     PCB 3D model (STEP, git-ignored — too large)
-│   └── 3D_PCB1_2026-10-25.step
+├── pcb/                     PCB 3D model (EasyEDA Pro STEP export)
+│   └── PCB.step
 ├── enclosure/               Parametric enclosure project
 │   ├── pcb_model.py         STEP parser: extracts board outline, holes,
 │   │                        component envelopes; validates against design
@@ -98,29 +98,17 @@ failure: outer dimensions, single-solid check, and exact boolean interference
 
 ### After a PCB revision
 
-1. Re-export the STEP from EasyEDA Pro and drop it in `hardware/pcb/`.
-2. Update the `EXPECT` table in `pcb_model.py` if any anchor moved
+1. Re-export the STEP from EasyEDA Pro and save it as `hardware/pcb/PCB.step`
+   (dated exports may live alongside; only `PCB.step` is tracked).
+2. Update the SHA-256 pin in `.github/workflows/hardware.yml`.
+3. Update the `EXPECT` table in `pcb_model.py` if any anchor moved
    (board outline, holes, key/encoder positions, connector envelopes).
    `pcb_model.py` fails with a diff of what changed — update the enclosure
    parameters accordingly before rebuilding.
 
-### The PCB STEP is not in git
-
-The EasyEDA STEP export is ~17 MB, so it is git-ignored. Two places need it:
-
-* **Locally** — just export it into `hardware/pcb/`.
-* **CI** — the workflow downloads it from the GitHub release `pcb-model`
-  and verifies its SHA-256. Publish/update it with:
-
-  ```bash
-  cd hardware/pcb
-  sha256sum 3D_PCB1_2026-10-25.step     # must match PCB_SHA256 in the workflow
-  gh release create pcb-model 3D_PCB1_2026-10-25.step \
-      --title "PCB 3D model" --notes "EasyEDA Pro STEP export for CI"
-  # After a PCB revision: update the asset + the PCB_SHA256 pin in
-  # .github/workflows/hardware.yml
-  gh release upload pcb-model 3D_PCB1_2026-10-25.step --clobber
-  ```
+Note: `PCB.step` is ~17 MB; it is tracked because the enclosure geometry is
+verified against it in CI. Dated exports (`3D_PCB1_<date>.step`) are
+git-ignored.
 
 ## Printing
 

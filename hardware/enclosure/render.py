@@ -63,7 +63,7 @@ def load_pcb_stl():
     cache = OUT / "PCB_world.stl"
     if not cache.exists():
         from build123d import import_step, export_stl
-        shape = import_step(str(HERE.parent / "pcb" / "3D_PCB1_2026-10-25.step"))
+        shape = import_step(str(HERE.parent / "pcb" / "PCB.step"))
         export_stl(shape, str(cache), tolerance=0.3, angular_tolerance=0.4)
     return load_stl(cache, min_area=0.05)
 

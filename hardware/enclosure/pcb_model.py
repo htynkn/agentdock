@@ -1,7 +1,6 @@
 """AgentDock PCB 3D 模型解析层
 ============================
-数据来源：嘉立创 EDA 专业版导出的 STEP
-          ``../pcb/3D_PCB1_2026-10-25.step``
+数据来源：嘉立创 EDA 专业版导出的 STEP（规范化文件名 ``../pcb/PCB.step``）
 
 本模块**不建模**，只把 STEP 里的几何事实提取成结构化锚点：
 
@@ -27,7 +26,7 @@ from pathlib import Path
 from build123d import GeomType, import_step
 
 HERE = Path(__file__).resolve().parent
-PCB_STEP = HERE.parent / "pcb" / "3D_PCB1_2026-10-25.step"
+PCB_STEP = HERE.parent / "pcb" / "PCB.step"
 
 # ---------------------------------------------------------------------------
 # 期望值（2026-10-25 版 PCB 实测）。任何一项对不上就报错，提示重新核对外壳。
@@ -46,7 +45,7 @@ EXPECT = {
     "encoder_bushing_r": 3.50,               # M7
     "encoder_bushing_z": (6.59, 15.59),
     "usb_bbox": (0.07, 13.18, 0.59, 6.87, 22.12, 4.75),
-    "header_bbox": (89.05, 12.05, -1.41, 91.55, 27.05, 10.19),
+    # 2026-10-25(2) 版 PCB：1×6 排针已删除，只余焊盘（板体铜箔，无 3D 几何）
     "sw1_body_bbox": (10.06, 36.43, -1.91, 22.96, 42.03, 7.74),
     "sw1_lever_bbox": (16.41, 41.63, 3.81, 19.91, 46.63, 6.31),
     "buzzer_bbox": (79.34, 7.72, 1.59, 88.04, 16.42, 5.61),
@@ -158,7 +157,7 @@ class PcbModel:
             bad.append(f"编码器套管 Z{enc['bushing_z0']:.2f}..{enc['bushing_z1']:.2f} "
                        f"≠ {e['encoder_bushing_z']}")
 
-        for name in ("usb", "header", "sw1_body", "sw1_lever", "buzzer", "led"):
+        for name in ("usb", "sw1_body", "sw1_lever", "buzzer", "led"):
             want = e[f"{name}_bbox"]
             if not _bbox_close(self.parts[name], want):
                 bad.append(f"{name} 包围盒 {tuple(round(v, 2) for v in self.parts[name])} "
@@ -345,9 +344,8 @@ def load(path: Path | None = None, verbose: bool = True) -> PcbModel:
     parts["usb"] = find(
         lambda bb, sx, sy, sz: bb[0] < 1.0 and 8.5 < sy < 9.5 and 3.5 < sz < 5.0,
         "USB-C 座")
-    parts["header"] = find(
-        lambda bb, sx, sy, sz: 2.3 < sx < 2.7 and 14.5 < sy < 15.5 and bb[5] > 9.0,
-        "1×6 排针")
+    # 1×6 排针已于 2026-10-25(2) 版删除；若未来重新加装，恢复 EXPECT 表
+    # 中的 header_bbox 与下方查找规则即可。
     parts["buzzer"] = find(
         lambda bb, sx, sy, sz: 8.4 < sx < 9.0 and 8.4 < sy < 9.0 and bb[0] > 60,
         "蜂鸣器")
