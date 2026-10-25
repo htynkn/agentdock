@@ -98,6 +98,13 @@ KNOB_HOLE_D = 8.6             # 编码器 M7 套管过孔：Ø7.0 套管 → 单
 KNOB_RECESS_D, KNOB_RECESS_T = 13.6, 0.8   # 旋钮裙边沉台：上限受右上立柱限制
                               # （轴心到立柱外圆 7.66，留 0.8 环壁 → 最大 Ø13.73）
 
+# --- 编码器按压支撑柱（在 Base 上） ---------------------------------------
+# EC11 带按压，按压时力经编码器本体向下顶 PCB。底座在编码器轴心正下方竖
+# 一根短柱顶住 PCB 底面，把力传到地板，而不是让 PCB 局部弯曲去拉焊脚。
+# 直径取 Ø7（r = 3.5，偏向保守）：STEP 里的 3D 体不包含焊锡堆，插件焊脚
+# 底部实际会有锡包，留出余量避免柱子顶到焊点/拉锡。
+BASE_ENC_POST_D = 7.0
+
 # --- WS2812 导光孔 --------------------------------------------------------
 # 原设计是 Ø9 → Ø3.2 的浅锥漏斗，锥面与顶面夹角仅 ~30°，孔口一圈是刀口
 # （局部壁厚 0.08–0.40 mm），在线检测直接报「模型存在薄壁结构」。
@@ -249,6 +256,12 @@ def build_base(L: Layout) -> "Part":
     # 原来只铺到 x=74.5，导致右侧 20 mm 宽的地板无筋。
     base += plate(cx0, L.Y(20.2), cx1, L.Y(22.2), FLOOR, Z_RIB_TOP, RIB_R)
 
+    # 4.3b 编码器按压支撑柱：在编码器轴心正下方，从地板顶到 PCB 底面。
+    #      EC11 带按压时力经编码器本体顶 PCB，这根柱子顶住 PCB 底面，
+    #      把力直接传给地板，避免 PCB 局部下弯拉扯焊脚。
+    base += cyl(L.X(m.encoder["center"][0]), L.Y(m.encoder["center"][1]),
+                FLOOR, Z_PCB_BOT, BASE_ENC_POST_D / 2)
+
     # 4.4 侧壁开口
     # --- USB-C（-X 端壁）：以「插头空腔」定位，而不是座体包围盒
     usb = m.parts["usb"]
@@ -346,7 +359,8 @@ def build_lid(L: Layout) -> "Part":
                      x + KEY_WIN / 2, y + KEY_WIN / 2,
                      Z_LID_BOT - 0.5, Z_TOP + 0.5, KEY_WIN_R)
 
-    # 5.4 编码器：Ø7.6 过孔 + Ø13 旋钮裙边沉台
+    # 5.4 编码器：Ø8.6 过孔 + Ø13.6 旋钮裙边沉台
+    #     （按压支撑在 Base 的 BASE_ENC_POST_D 柱子上，不在盖子这边）
     ex, ey = L.XY(*m.encoder["center"])
     lid -= cyl(ex, ey, Z_LID_BOT - 0.5, Z_TOP + 0.5, KNOB_HOLE_D / 2)
     lid -= cyl(ex, ey, Z_TOP - KNOB_RECESS_T, Z_TOP + 0.5, KNOB_RECESS_D / 2)
