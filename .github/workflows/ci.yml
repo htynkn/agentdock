@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  firmware:
+    name: Firmware (ESP32-C2)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Build with ESP-IDF v5.4.2
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.4.2
+          target: esp32c2
+          path: firmware
+          command: idf.py build && idf.py size && idf.py merge-bin
+
+      - name: Firmware size
+        if: always()
+        run: |
+          if [ -f firmware/build/agentdock.bin ]; then
+            echo "### Firmware size" >> "$GITHUB_STEP_SUMMARY"
+            ls -lh firmware/build/agentdock.bin firmware/build/merged-binary.bin 2>/dev/null \
+              | awk '{print "- `" $9 "`: " $5}' >> "$GITHUB_STEP_SUMMARY"
+            ls -lh firmware/build/agentdock.bin
+          fi
+
+      - name: Upload firmware artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: agentdock-firmware-${{ github.run_number }}
+          path: |
+            firmware/build/agentdock.bin
+            firmware/build/bootloader/bootloader.bin
+            firmware/build/partition_table/partition-table.bin
+            firmware/build/merged-binary.bin
+            firmware/build/flash_args
+          if-no-files-found: error
+          retention-days: 30
+
+  plugin:
+    name: Plugin (TypeScript)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: pi-plugin
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: pi-plugin/package-lock.json
+
+      - name: Check lockfile registry
+        run: |
+          private=$(grep -E '"resolved": "https?://' package-lock.json | grep -v 'https://registry.npmjs.org/' || true)
+          if [ -n "$private" ]; then
+            echo "package-lock.json contains non-public registry URLs:"
+            echo "$private" | head -20
+            exit 1
+          fi
+
+      # The lockfile is generated with npm 11, while the Node 22 image ships
+      # npm 10. Align npm to avoid lockfile/installer incompatibilities.
+      - name: Update npm
+        run: npm install --global npm@11 || sudo npm install --global npm@11
+
+      # --ignore-scripts avoids building native BLE bindings on the runner;
+      # the type definitions needed for typechecking are still installed.
+      - name: Install dependencies
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund || {
+            echo "npm ci failed, retrying with npm install"
+            rm -rf node_modules
+            npm install --ignore-scripts --no-audit --no-fund
+          }
+
+      - name: Typecheck
+        run: npm run typecheck

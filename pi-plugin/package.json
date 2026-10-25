@@ -1,0 +1,22 @@
+{
+  "name": "agentdock-pi-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "AgentDock BLE hardware controller bridge for the pi coding agent",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "scan": "node scan-test.mjs"
+  },
+  "dependencies": {
+    "@stoprocent/noble": "^1.9.4"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^1.4.0",
+    "@types/node": "^26.6.5",
+    "typescript": "^7.0.2"
+  }
+}

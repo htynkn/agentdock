@@ -1,0 +1,22 @@
+# AgentDock firmware (ESP32-C2) — BLE controller for the pi coding agent.
+# Custom GATT channel only; no HID. Sound language + persistent mute.
+
+CONFIG_IDF_TARGET="esp32c2"
+
+CONFIG_BT_ENABLED=y
+# The ESP32-C2 only supports BLE. NimBLE uses roughly half the RAM of Bluedroid.
+CONFIG_BT_NIMBLE_ENABLED=y
+CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y
+
+# The ESPC2-M1 module has a 26 MHz crystal (the 40 MHz default breaks timing).
+CONFIG_XTAL_FREQ_26=y
+
+# C2 + 26 MHz: the ROM bootloader logs at 74880 baud, so align the console.
+CONFIG_ESP_CONSOLE_UART_BAUDRATE=74880
+
+# Memory headroom.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=4096
+
+# The 1 ms input poll needs a 1000 Hz tick (at the 100 Hz default a 1 ms
+# vTaskDelay is zero ticks and would starve the idle task).
+CONFIG_FREERTOS_HZ=1000
