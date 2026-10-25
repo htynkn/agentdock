@@ -289,8 +289,16 @@ environment.
 
 | Job | What it does |
 |---|---|
-| **Firmware (ESP32-C2)** | Builds `firmware/` with ESP-IDF v5.4.2 in the official `espressif/idf` container, reports the image size and uploads the binaries as artifacts on `master`. |
-| **Plugin (TypeScript)** | Installs `pi-plugin/` with `npm ci --ignore-scripts` and runs `npm run typecheck`. |
+| **Firmware (ESP32-C2)** | Builds `firmware/` with ESP-IDF v5.4.2 in the official `espressif/idf` container, reports the image size and uploads the flashable binaries as a workflow artifact on every run, including pull requests. |
+| **Plugin (TypeScript)** | Installs `pi-plugin/` with `npm ci --ignore-scripts`, checks that the lockfile uses the public npm registry, and runs `npm run typecheck`. |
+
+The firmware artifact is named `agentdock-firmware-<run-number>` and contains:
+
+- `agentdock.bin` — application image
+- `bootloader/bootloader.bin` — bootloader image
+- `partition_table/partition-table.bin` — partition table
+- `merged-binary.bin` — single factory image for offset `0x0`
+- `flash_args` — `esptool.py` flash arguments
 
 The firmware job starts from `sdkconfig.defaults`, which also verifies that a
 clean checkout still builds.
