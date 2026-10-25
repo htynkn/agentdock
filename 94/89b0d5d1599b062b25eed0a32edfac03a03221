@@ -1,0 +1,26 @@
+.github/workflows/hardware.yml
+  s_73d4accb3e47c7::t_3980baca768763 68-70,93-94
+hardware/README.md
+  s_73d4accb3e47c7::t_8cb6c5620d7bb2 145-148
+README.md
+  s_73d4accb3e47c7::t_046727b2b373ff 16-18,36-38,59-62
+hardware/enclosure/animate.py
+  s_73d4accb3e47c7::t_2955d857e80093 165
+  s_73d4accb3e47c7::t_5fb67bf1a80585 1-164,166-187
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9489b0d5d1599b062b25eed0a32edfac03a03221",
+  "prompts": {},
+  "sessions": {
+    "s_73d4accb3e47c7": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a17208-5ad3-76cb-b9b2-bb05868850a9",
+        "model": "glm-5.3-flashx"
+      },
+      "human_author": "htynkn <htynkn@gmail.com>"
+    }
+  }
+}
