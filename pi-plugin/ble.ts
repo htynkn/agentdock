@@ -101,7 +101,6 @@ export class DeckChannel {
         return "not_found";
       }
       this.log(`连接 ${target.name} (rssi ${target.rssi}) ...`);
-      Noble.once("discover", () => {});   // 保持事件循环引用
       const p: any = await this.findAndConnect(target.name);
       if (!p) {
         this.log("GAP 连接失败 (findAndConnect 返回空)");
@@ -109,6 +108,10 @@ export class DeckChannel {
       }
 
       this.peripheral = p;
+      /* noble 会缓存同一外设/特征的对象实例。重连时若不先清空旧监听器，
+       * disconnect / data 监听会逐次叠加 → 一次按键事件被重复投递 N 次
+       * （重连过几次就重复几份）。这是“按一下发多条消息”的根因。 */
+      p.removeAllListeners("disconnect");
       p.once("disconnect", () => {
         if (this.disposed) return;
         this.log("设备断开");
@@ -130,6 +133,7 @@ export class DeckChannel {
         this.disposeLink();
         return "failed";
       }
+      this.eventChar.removeAllListeners("data");
       this.eventChar.on("data", (raw: Buffer) => {
         try {
           this.onEvent(JSON.parse(raw.toString("utf8")));
