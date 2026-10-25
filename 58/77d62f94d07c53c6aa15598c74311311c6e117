@@ -1,0 +1,87 @@
+LICENSE
+  s_6896d8602854c5::t_24bfeae1f61906 1-21
+.gitignore
+  s_6896d8602854c5::t_e6f8a2cebed0ab 1-62
+.github/dependabot.yml
+  s_6896d8602854c5::t_8d79567c261c09 1-17
+.github/workflows/ci.yml
+  s_6896d8602854c5::t_6e7a3cb0b242c2 1-83
+pi-plugin/package.json
+  s_6896d8602854c5::t_fa48f31ace0cd7 6-18
+  s_6896d8602854c5::t_bd8db186a1abfa 3-5
+  s_6896d8602854c5::t_b3efda2e127871 19-21
+  s_6896d8602854c5::t_345563518c008f 1-2,22
+firmware/sdkconfig.defaults
+  s_6896d8602854c5::t_775c558503bc7e 1-21
+  s_6896d8602854c5::t_b3e131af62980f 22
+README.md
+  s_6896d8602854c5::t_43826eea3b07d6 11-14,24,237-256
+  s_6896d8602854c5::t_7ab5ef57dab96c 1-10,15-23,25-236,257-300
+pi-plugin/README.md
+  s_6896d8602854c5::t_2f3152a7d27218 7-8
+  s_6896d8602854c5::t_8b037a584e9b45 1-6,10-115
+  s_6896d8602854c5::t_81b74c4096647d 9
+pi-plugin/tsconfig.json
+  s_6896d8602854c5::t_3e0e8305d5c5c9 9-12
+  s_6896d8602854c5::t_4da642fd0bcada 6-8
+  s_6896d8602854c5::t_07f3b7767967f7 13
+  s_6896d8602854c5::t_c5753132395e89 1-5
+firmware/CMakeLists.txt
+  s_80e52e552c3e98::t_ed1b8991ef7b5a 1-3
+firmware/dependencies.lock
+  s_80e52e552c3e98::t_a8feaaa85a392c 1-20
+firmware/main/app_events.h
+  s_80e52e552c3e98::t_01c0f0689c4866 1-41
+firmware/main/config.c
+  s_80e52e552c3e98::t_da97092f624a53 1-52
+firmware/main/deck.c
+  s_80e52e552c3e98::t_061f76b37c7b75 1-282
+firmware/main/deck.h
+  s_80e52e552c3e98::t_726bcca5ae6be7 1-31
+firmware/main/fx.c
+  s_80e52e552c3e98::t_1c9488182a058e 1-335
+firmware/main/fx.h
+  s_80e52e552c3e98::t_3633815073ea6f 1-43
+firmware/main/idf_component.yml
+  s_80e52e552c3e98::t_383f665a0991a5 1-2
+firmware/main/input.h
+  s_80e52e552c3e98::t_bf6880f3656285 1-25
+firmware/main/main.c
+  s_80e52e552c3e98::t_c796b68e220e12 1-164
+pi-plugin/ble.ts
+  s_80e52e552c3e98::t_0963d351867901 1-205
+pi-plugin/config.ts
+  s_80e52e552c3e98::t_ba914165b5a3a2 1-46
+pi-plugin/index.ts
+  s_80e52e552c3e98::t_7bf3803c9824f0 1-248
+pi-plugin/package-lock.json
+  s_6896d8602854c5::t_c0eadadeee4237 1-3094
+pi-plugin/panel.ts
+  s_80e52e552c3e98::t_44c26155d5178d 1-84
+pi-plugin/scroll.ts
+  s_80e52e552c3e98::t_2b00f8c2885541 1-73
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5877d62f94d07c53c6aa15598c74311311c6e117",
+  "prompts": {},
+  "sessions": {
+    "s_6896d8602854c5": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a17173-2109-70a6-9a9f-e92c3fd70890",
+        "model": "deepseek-v4.1-flash"
+      },
+      "human_author": "htynkn <htynkn@gmail.com>"
+    },
+    "s_80e52e552c3e98": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a16e9d-ac1b-7391-837b-eab8405d7405",
+        "model": "glm-5.3-flashx"
+      },
+      "human_author": "htynkn <htynkn@gmail.com>"
+    }
+  }
+}
