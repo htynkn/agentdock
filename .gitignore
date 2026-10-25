@@ -1,0 +1,62 @@
+# ---------------------------------------------------------------------------
+# macOS
+# ---------------------------------------------------------------------------
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# ---------------------------------------------------------------------------
+# Editors / IDEs
+# ---------------------------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.code-workspace
+
+# ---------------------------------------------------------------------------
+# ESP-IDF (firmware/)
+# ---------------------------------------------------------------------------
+# Build output
+firmware/build/
+# Component Manager downloads (reproducible via dependencies.lock + idf_component.yml)
+firmware/managed_components/
+# Generated per-machine configuration (defaults live in sdkconfig.defaults)
+firmware/sdkconfig
+firmware/sdkconfig.old
+firmware/sdkconfig.*.old
+# Local caches / compile database
+firmware/.cache/
+firmware/compile_commands.json
+
+# ---------------------------------------------------------------------------
+# Node.js (pi-plugin/)
+# ---------------------------------------------------------------------------
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.npm/
+dist/
+coverage/
+.nyc_output/
+*.tsbuildinfo
+
+# ---------------------------------------------------------------------------
+# Environment / credentials
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ---------------------------------------------------------------------------
+# Logs / temporary files
+# ---------------------------------------------------------------------------
+*.log
+tmp/
+*.tmp
