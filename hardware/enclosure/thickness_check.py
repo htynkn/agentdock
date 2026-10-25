@@ -22,6 +22,7 @@
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
 import struct
 from pathlib import Path
@@ -81,40 +82,79 @@ def sample_surface(V, N, target_area, seed=0):
     return P, N[idx], w
 
 
-def first_hit(V, N, P, max_dist, eps=1e-4):
-    """对每个采样点 P 沿 -N 找最近命中距离（跳过自身三角形及其邻面噪声）。"""
+def subdivide_tris(V, max_rad, depth=6):
+    """把外接圆半径 > max_rad 的大三角形递归四分。
+
+    大平面在 STL 里常只切成 2 个超大三角形，会让 KD-tree 查询半径被
+    ``rad.max()`` 撑到整个模型尺寸，候选集退化为全部三角形。
+    四分不改变几何（命中距离不变），只是让空间索引有效。
+    """
+    V = V.copy()
+    for _ in range(depth):
+        C = V.mean(axis=1)
+        rad = np.max(np.linalg.norm(V - C[:, None, :], axis=2), axis=1)
+        big = np.where(rad > max_rad)[0]
+        if big.size == 0:
+            break
+        a, b, c = V[big, 0], V[big, 1], V[big, 2]
+        ab, bc, ca = (a + b) / 2, (b + c) / 2, (c + a) / 2
+        quads = np.stack([
+            np.stack([a, ab, ca], axis=1),
+            np.stack([ab, b, bc], axis=1),
+            np.stack([ca, bc, c], axis=1),
+            np.stack([ab, bc, ca], axis=1),
+        ], axis=1)
+        V = np.concatenate([np.delete(V, big, axis=0),
+                            quads.reshape(-1, 3, 3)])
+    return V
+
+
+def first_hit(V, N, P, max_dist, eps=1e-4, chunk=4096):
+    """对每个采样点 P 沿 -N 找最近命中距离（跳过自身三角形及其邻面噪声）。
+
+    向量化实现：按 chunk 展开成 (采样点, 候选三角形) 大数组，
+    一次性 Möller–Trumbore 求交，``np.minimum.at`` 按点归约取最小命中。
+    """
     C = V.mean(axis=1)                      # 三角形中心，用作空间索引
     rad = np.max(np.linalg.norm(V - C[:, None, :], axis=2), axis=1)
     tree = cKDTree(C)
-    cand = tree.query_ball_point(P, max_dist + float(rad.max()))
+    r = max_dist + float(rad.max())
 
     A, e1, e2 = V[:, 0], V[:, 1] - V[:, 0], V[:, 2] - V[:, 0]
     out = np.full(len(P), np.inf)
-    for i, js in enumerate(cand):
-        if len(js) == 0:
+    for s in range(0, len(P), chunk):
+        Pc = P[s:s + chunk]
+        cand = tree.query_ball_point(Pc, r)
+        counts = np.fromiter((len(c) for c in cand), dtype=np.int64,
+                             count=len(cand))
+        if counts.sum() == 0:
             continue
-        js = np.asarray(js, dtype=np.int64)
+        pi = np.repeat(np.arange(len(Pc)), counts)
+        tj = np.fromiter(itertools.chain.from_iterable(cand),
+                         dtype=np.int64, count=int(counts.sum()))
         # 跳过包含该采样点（就落在其面上）的三角形
-        near = np.linalg.norm(C[js] - P[i], axis=1) <= rad[js] + eps
-        js = js[~near]
-        if js.size == 0:
+        near = np.linalg.norm(C[tj] - Pc[pi], axis=1) <= rad[tj] + eps
+        pi, tj = pi[~near], tj[~near]
+        if pi.size == 0:
             continue
-        d = -N[i]
-        p = np.cross(d, e2[js])
-        det = np.einsum("ij,ij->i", e1[js], p)
+        d = -N[s + pi]      # pi 是 chunk 内局部索引，N 要加全局偏移
+        p = np.cross(d, e2[tj])
+        det = np.einsum("ij,ij->i", e1[tj], p)
         ok = np.abs(det) > 1e-12
-        if not ok.any():
+        pi, tj, p, det = pi[ok], tj[ok], p[ok], det[ok]
+        if pi.size == 0:
             continue
-        js, p, det = js[ok], p[ok], det[ok]
+        d = -N[s + pi]          # ok 过滤后重算，保持与 pi 对齐
         inv = 1.0 / det
-        tv = P[i] - A[js]
+        tv = Pc[pi] - A[tj]
         u = np.einsum("ij,ij->i", tv, p) * inv
-        q = np.cross(tv, e1[js])
-        v = np.einsum("ij,ij->i", d[None, :], q) * inv
-        t = np.einsum("ij,ij->i", e2[js], q) * inv
+        q = np.cross(tv, e1[tj])
+        v = np.einsum("ij,ij->i", d, q) * inv
+        t = np.einsum("ij,ij->i", e2[tj], q) * inv
         m = (u >= -1e-9) & (v >= -1e-9) & (u + v <= 1 + 1e-9) & (t > 1e-6)
-        if m.any():
-            out[i] = t[m].min()
+        if not m.any():
+            continue
+        np.minimum.at(out, s + pi[m], t[m])
     return out
 
 
@@ -149,12 +189,12 @@ def _cluster(P, w, link):
 # ---------------------------------------------------------------------------
 # 主分析
 # ---------------------------------------------------------------------------
-def analyze_stl(path: Path, min_t=0.5, sample_area=0.5, max_wall=14.0,
+def analyze_stl(path: Path, min_t=0.5, sample_area=0.5, max_wall=3.0,
                 link=1.5, seed=0) -> dict:
     V = load_stl(path)
     N = orient_outward(V, face_normals(V))
     P, Np, w = sample_surface(V, N, sample_area, seed)
-    t = first_hit(V, Np, P, max_wall)
+    t = first_hit(subdivide_tris(V, max_rad=4.0), Np, P, max_wall)
 
     fin = np.isfinite(t)
     thin = fin & (t < min_t)
