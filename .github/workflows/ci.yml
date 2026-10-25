@@ -43,7 +43,7 @@ jobs:
           fi
 
       - name: Upload firmware artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: agentdock-firmware-${{ github.run_number }}
           path: |
