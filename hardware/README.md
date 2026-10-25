@@ -142,6 +142,7 @@ The EasyEDA STEP export is ~17 MB, so it is git-ignored. Two places need it:
 ## CI
 
 `.github/workflows/hardware.yml` runs the parametric build headless on every
-push/PR touching `hardware/**`, runs the full self-check suite, and uploads a
-`agentdock-hardware-<run>` artifact containing the printable STL/STEP files and
-preview PNGs.
+push/PR touching `hardware/**`, runs the full self-check suite, renders the
+preview images and the assembly animation, and uploads a
+`agentdock-hardware-<run>` artifact containing the printable STL/STEP files,
+the preview PNGs and `assembly.mp4` / `assembly.gif`.

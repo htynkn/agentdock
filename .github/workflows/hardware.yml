@@ -65,6 +65,9 @@ jobs:
       - name: Render previews
         run: uv run render.py
 
+      - name: Render assembly animation
+        run: uv run animate.py
+
       - name: Job summary
         if: always()
         run: |
@@ -87,5 +90,7 @@ jobs:
             hardware/enclosure/output/Base.step
             hardware/enclosure/output/Lid.step
             hardware/enclosure/render/*.png
+            hardware/enclosure/render/assembly.mp4
+            hardware/enclosure/render/assembly.gif
           if-no-files-found: error
           retention-days: 90
