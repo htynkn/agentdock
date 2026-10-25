@@ -1,0 +1,19 @@
+README.md
+  s_6896d8602854c5::t_e50af69a5952b5 292-301
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "66b95254e065d833f9d3d482aaacd1c55dafdee5",
+  "prompts": {},
+  "sessions": {
+    "s_6896d8602854c5": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a17173-2109-70a6-9a9f-e92c3fd70890",
+        "model": "deepseek-v4.1-flash"
+      },
+      "human_author": "htynkn <htynkn@gmail.com>"
+    }
+  }
+}
