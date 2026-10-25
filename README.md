@@ -13,8 +13,9 @@ running, or failed. The keys and encoder let you abort, continue, send macros or
 scroll the agent output without switching windows. A short melody confirms each
 key press, and the buzzer can be muted persistently.
 
-The repository contains the **firmware** and the **pi extension**. PCB and
-enclosure design files are not part of this repository.
+The repository contains the **firmware**, the **pi extension**, and the
+**hardware** design files for the enclosure (parametric build123d model of the
+base + lid, ready for 3D printing — see [hardware/README.md](hardware/README.md)).
 
 ---
 
@@ -32,6 +33,9 @@ enclosure design files are not part of this repository.
   automatically.
 - **Reproducible builds** — pinned ESP-IDF version, Component Manager lockfile and
   a GitHub Actions CI pipeline for both firmware and plugin.
+- **Printable enclosure** — parametric build123d model with automated
+  interference checks; CI publishes the STL/STEP files and preview renders as
+  artifacts.
 
 ## Repository layout
 
@@ -52,7 +56,10 @@ agentdock/
 │   ├── panel.ts         interactive /dock panel
 │   ├── scroll.ts        encoder → transcript scrolling
 │   └── config.ts        ~/.pi/agent/agentdock.json persistence
-└── .github/workflows/   CI
+├── hardware/            3D-printed enclosure (build123d, see hardware/README.md)
+│   ├── pcb/             PCB 3D model (STEP, git-ignored; pinned GitHub release)
+│   └── enclosure/       parametric base + lid, self-checks, renders, animation
+└── .github/workflows/   CI (firmware, plugin, hardware)
 ```
 
 ## How it works

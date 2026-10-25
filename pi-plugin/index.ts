@@ -45,9 +45,20 @@ export default function agentDeckExtension(pi: ExtensionAPI) {
   let transientUntil = 0;        // done/error 特效期间不覆盖 LED
   let lastCtx: ExtensionContext | null = null;
 
+  /* 同键去重: 连接层理论上有监听器叠加风险（ble.ts 已修复），
+   * 这里再兜底过滤 300ms 内的重复同键事件，避免一次按压触发多条消息 */
+  const DEDUP_MS = 300;
+  let lastKey: { id: number; at: number } | null = null;
+
   /* ---------- 设备 → pi ---------- */
   function handleDeviceEvent(msg: any): void {
     if (msg.k === "key") {
+      const now = Date.now();
+      if (lastKey && lastKey.id === msg.id && now - lastKey.at < DEDUP_MS) {
+        log(`重复事件已忽略: KEY${msg.id} (${now - lastKey.at}ms 内)`);
+        return;
+      }
+      lastKey = { id: msg.id, at: now };
       switch (msg.id) {
         case 1: { // KEY1: 打断
           log("设备请求: 打断");

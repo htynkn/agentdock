@@ -1,0 +1,93 @@
+name: Hardware
+
+on:
+  pull_request:
+    paths:
+      - "hardware/**"
+      - ".github/workflows/hardware.yml"
+  push:
+    branches:
+      - master
+      - main
+    paths:
+      - "hardware/**"
+      - ".github/workflows/hardware.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hardware-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  enclosure:
+    name: Enclosure (build123d)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: hardware/enclosure
+    env:
+      PYTHONUNBUFFERED: "1"  # 实时输出进度，避免 CI 日志长时间无输出
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: hardware/enclosure/uv.lock
+
+      - name: Sync dependencies
+        run: uv sync --frozen
+
+      - name: Verify PCB STEP integrity
+        working-directory: hardware
+        env:
+          PCB_SHA256: 01a3affa7d8d6c736b807f8b1ef6fda37c2199d4e9e1803ef634b8368fa86bd5
+        run: |
+          echo "$PCB_SHA256  pcb/PCB.step" | sha256sum --check
+          # PCB.step 被改版时：更新此哈希 + pcb_model.py 的 EXPECT 表
+
+      - name: Validate PCB anchors
+        run: uv run pcb_model.py
+
+      - name: Build enclosure + self-checks
+        run: uv run enclosure.py
+
+      - name: Render previews
+        run: uv run render.py
+
+      - name: Render assembly animation
+        run: uv run animate.py
+
+      - name: Job summary
+        if: always()
+        run: |
+          if [ -f output/pcb_report.json ]; then
+            {
+              echo "### Enclosure build"
+              echo '```json'
+              head -40 output/pcb_report.json
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload printable files + previews
+        uses: actions/upload-artifact@v6
+        with:
+          name: agentdock-hardware-${{ github.run_number }}
+          path: |
+            hardware/enclosure/output/Base.stl
+            hardware/enclosure/output/Lid.stl
+            hardware/enclosure/output/Base.step
+            hardware/enclosure/output/Lid.step
+            hardware/enclosure/render/*.png
+            hardware/enclosure/render/assembly.mp4
+            hardware/enclosure/render/assembly.gif
+          if-no-files-found: error
+          retention-days: 90

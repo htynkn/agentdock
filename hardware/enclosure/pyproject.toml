@@ -1,0 +1,11 @@
+[project]
+name = "agentdock-enclosure"
+version = "0.1.0"
+description = "AgentDock 外壳 — build123d 参数化建模（PCB 3D 模型见 ../pcb）"
+requires-python = ">=3.12"
+dependencies = [
+    "build123d==0.13.0",
+    "matplotlib>=3.11.2",
+    "numpy>=2.5.4",
+    "scipy>=1.18.1",
+]
