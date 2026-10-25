@@ -1,0 +1,91 @@
+name: Hardware
+
+on:
+  pull_request:
+    paths:
+      - "hardware/**"
+      - ".github/workflows/hardware.yml"
+  push:
+    branches:
+      - master
+      - main
+    paths:
+      - "hardware/**"
+      - ".github/workflows/hardware.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hardware-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  enclosure:
+    name: Enclosure (build123d)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: hardware/enclosure
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: hardware/enclosure/uv.lock
+
+      - name: Sync dependencies
+        run: uv sync --frozen
+
+      # The PCB STEP (17 MB) is git-ignored; the checkout does not contain it.
+      # Download the pinned export from the GitHub release instead.
+      - name: Download PCB STEP
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PCB_ASSET: 3D_PCB1_2026-10-25.step
+          PCB_SHA256: 9ce41d10ebe39031982e546f698ff40b6cd7ab0ed58d08902cfb6a0aebd9db12
+        run: |
+          mkdir -p ../pcb
+          gh release download pcb-model --pattern "$PCB_ASSET" \
+            --repo "$GITHUB_REPOSITORY" --output "../pcb/$PCB_ASSET"
+          echo "$PCB_SHA256  ../pcb/$PCB_ASSET" | sha256sum --check --status
+
+      - name: Validate PCB anchors
+        run: uv run pcb_model.py
+
+      - name: Build enclosure + self-checks
+        run: uv run enclosure.py
+
+      - name: Render previews
+        run: uv run render.py
+
+      - name: Job summary
+        if: always()
+        run: |
+          if [ -f output/pcb_report.json ]; then
+            {
+              echo "### Enclosure build"
+              echo '```json'
+              head -40 output/pcb_report.json
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload printable files + previews
+        uses: actions/upload-artifact@v6
+        with:
+          name: agentdock-hardware-${{ github.run_number }}
+          path: |
+            hardware/enclosure/output/Base.stl
+            hardware/enclosure/output/Lid.stl
+            hardware/enclosure/output/Base.step
+            hardware/enclosure/output/Lid.step
+            hardware/enclosure/render/*.png
+          if-no-files-found: error
+          retention-days: 90
