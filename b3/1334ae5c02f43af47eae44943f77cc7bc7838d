@@ -1,0 +1,19 @@
+hardware/enclosure/enclosure.py
+  s_8fe4b85ce4a70a::t_dda3ab37b29db6 349-352,355,359-370
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b31334ae5c02f43af47eae44943f77cc7bc7838d",
+  "prompts": {},
+  "sessions": {
+    "s_8fe4b85ce4a70a": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a17290-f9ba-711e-9517-0a8f2684d5f7",
+        "model": "glm-5.3-flashx"
+      },
+      "human_author": "htynkn <htynkn@gmail.com>"
+    }
+  }
+}
