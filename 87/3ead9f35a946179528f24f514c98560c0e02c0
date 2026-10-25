@@ -1,0 +1,31 @@
+hardware/enclosure/pcb_model.py
+  s_73d4accb3e47c7::t_954c8346a47756 3,29
+  s_73d4accb3e47c7::t_acc7aa3325cdec 48,160,347-348
+.github/workflows/hardware.yml
+  s_73d4accb3e47c7::t_fedbc224dcfc71 49
+  s_73d4accb3e47c7::t_e13f5c8f6146b7 46-47,51-52
+hardware/enclosure/render.py
+  s_73d4accb3e47c7::t_65e27e51c20edc 66
+hardware/README.md
+  s_73d4accb3e47c7::t_cd1eefbdc11bf2 10-11,101-104,109-111
+hardware/.gitignore
+  s_73d4accb3e47c7::t_176ea18626bf24 1-3,6
+hardware/pcb/PCB.step
+  s_73d4accb3e47c7::t_af285c3f691fb5 1-265681
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "873ead9f35a946179528f24f514c98560c0e02c0",
+  "prompts": {},
+  "sessions": {
+    "s_73d4accb3e47c7": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a17208-5ad3-76cb-b9b2-bb05868850a9",
+        "model": "glm-5.3-flashx"
+      },
+      "human_author": "htynkn <htynkn@gmail.com>"
+    }
+  }
+}
