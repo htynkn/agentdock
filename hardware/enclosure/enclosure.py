@@ -32,6 +32,12 @@ from build123d import (
 
 import pcb_model
 
+
+def log(msg: str):
+    """即时输出（CI 日志可能缓冲，必须 flush 才能实时看到进度）。"""
+    print(msg, flush=True)
+
+
 # ===========================================================================
 # 1. 参数（单位 mm）
 # ===========================================================================
@@ -285,10 +291,14 @@ def build(verbose: bool = True):
     m = pcb_model.load(verbose=verbose)
     L = Layout(m)
     t0 = time.time()
+    if verbose:
+        log(f"[{time.time() - t0:6.1f}s] build_base ...")
     base = build_base(L)
+    if verbose:
+        log(f"[{time.time() - t0:6.1f}s] build_base 完成，build_lid ...")
     lid = build_lid(L)
     if verbose:
-        print(f"建模完成 {time.time() - t0:.1f}s")
+        log(f"[{time.time() - t0:6.1f}s] build_lid 完成（建模总耗时 {time.time() - t0:.1f}s）")
     return m, L, base, lid
 
 
@@ -297,23 +307,31 @@ def main():
     m, L, base, lid = build()
     OUT.mkdir(exist_ok=True)
 
-    export_step(base, str(OUT / "Base.step"))
-    export_step(lid, str(OUT / "Lid.step"))
-    export_stl(base, str(OUT / "Base.stl"))
-    export_stl(lid, str(OUT / "Lid.stl"))
-    export_stl(base, str(OUT / "Base_lowres.stl"), tolerance=0.1, angular_tolerance=0.3)
-    export_stl(lid, str(OUT / "Lid_lowres.stl"), tolerance=0.1, angular_tolerance=0.3)
+    exports = [
+        ("Base.step", lambda: export_step(base, str(OUT / "Base.step"))),
+        ("Lid.step", lambda: export_step(lid, str(OUT / "Lid.step"))),
+        ("Base.stl", lambda: export_stl(base, str(OUT / "Base.stl"))),
+        ("Lid.stl", lambda: export_stl(lid, str(OUT / "Lid.stl"))),
+        ("Base_lowres.stl", lambda: export_stl(base, str(OUT / "Base_lowres.stl"),
+                                               tolerance=0.1, angular_tolerance=0.3)),
+        ("Lid_lowres.stl", lambda: export_stl(lid, str(OUT / "Lid_lowres.stl"),
+                                              tolerance=0.1, angular_tolerance=0.3)),
+    ]
+    for name, fn in exports:
+        t = time.time()
+        fn()
+        log(f"  导出 {name:16s} {time.time() - t:5.1f}s")
     pcb_model.dump(m, OUT / "pcb_report.json")
 
     # ---- 自检 ------------------------------------------------------------
-    print("\n========== 尺寸自检 ==========")
+    log("\n========== 尺寸自检 ==========")
     ok = True
 
     def chk(name, got, want, tol=0.01):
         nonlocal ok
         good = abs(got - want) <= tol
         ok &= good
-        print(f"  {'✓' if good else '✗'} {name:22s} {got:9.3f}  (设计 {want:9.3f})")
+        print(f"  {'✓' if good else '✗'} {name:22s} {got:9.3f}  (设计 {want:9.3f})", flush=True)
 
     bb = base.bounding_box()
     chk("Base X", bb.size.X, L.out_w)
@@ -333,25 +351,26 @@ def main():
     pcb = pcb_model.import_step(str(m.path))
     for name, part in (("Base", base), ("Lid", lid)):
         t = time.time()
+        log(f"  干涉检查 PCB ∩ {name} ...")
         inter = pcb & (back * part)
         v = sum(s.volume for s in inter.solids()) if inter is not None else 0.0
         good = v < 0.01
         ok &= good
         print(f"  {'✓' if good else '✗'} PCB ∩ {name:17s} {v:9.4f} mm³"
-              f"  （{time.time() - t:.0f}s）")
+              f"  （{time.time() - t:.0f}s）", flush=True)
 
-    print(f"\n  Base 体积 {base.volume:9.1f} mm³")
+    log(f"\n  Base 体积 {base.volume:9.1f} mm³")
     print(f"  Lid  体积 {lid.volume:9.1f} mm³")
     print(f"  外壳外形 {L.out_w:.3f} × {L.out_d:.3f} × {Z_TOP:.2f} mm")
     print(f"  内腔     {L.cav[2] - L.cav[0]:.3f} × {L.cav[3] - L.cav[1]:.3f} mm"
           f" R{L.cav_r:.3f}")
-    print("\n导出:")
+    log("\n导出:")
     for f in sorted(OUT.iterdir()):
-        print(f"  {f.name:20s} {f.stat().st_size / 1024:9.1f} KB")
-    print(f"\n总耗时 {time.time() - t0:.1f}s")
+        log(f"  {f.name:20s} {f.stat().st_size / 1024:9.1f} KB")
+    log(f"\n总耗时 {time.time() - t0:.1f}s")
     if not ok:
         raise SystemExit("✗ 自检未通过")
-    print("✓ 全部自检通过")
+    log("✓ 全部自检通过")
 
 
 if __name__ == "__main__":

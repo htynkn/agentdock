@@ -25,10 +25,12 @@ jobs:
   enclosure:
     name: Enclosure (build123d)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: hardware/enclosure
+    env:
+      PYTHONUNBUFFERED: "1"  # 实时输出进度，避免 CI 日志长时间无输出
     steps:
       - name: Checkout
         uses: actions/checkout@v6

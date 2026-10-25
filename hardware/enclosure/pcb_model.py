@@ -230,9 +230,10 @@ def load(path: Path | None = None, verbose: bool = True) -> PcbModel:
         raise FileNotFoundError(f"找不到 PCB STEP：{path}")
 
     compound = import_step(str(path))
+    print(f"STEP 导入完成: {path.name}", flush=True)
     solids = [s for s in compound.solids() if s.volume > 0.5]
     if verbose:
-        print(f"STEP: {path.name}  实体 {len(solids)} 个（已滤除零体积碎片）")
+        print(f"STEP: {path.name}  实体 {len(solids)} 个（已滤除零体积碎片）", flush=True)
 
     # ---- 1. 找板体：XY 面积最大且很薄的实体 ------------------------------
     def xy_area(s):
