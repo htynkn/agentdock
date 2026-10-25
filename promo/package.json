@@ -1,0 +1,18 @@
+{
+  "name": "agentdock-promo",
+  "private": true,
+  "version": "0.1.0",
+  "description": "AgentDock 使用演示动画（three.js 渲染 + Playwright 逐帧捕获 + ffmpeg 合成）",
+  "type": "module",
+  "scripts": {
+    "preview": "node serve.mjs",
+    "capture": "node capture.mjs",
+    "build": "./build.sh"
+  },
+  "dependencies": {
+    "three": "0.180.0"
+  },
+  "devDependencies": {
+    "playwright": "1.60.0"
+  }
+}
