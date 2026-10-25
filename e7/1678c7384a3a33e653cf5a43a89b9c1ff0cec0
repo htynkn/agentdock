@@ -1,0 +1,20 @@
+.github/workflows/ci.yml
+  s_6896d8602854c5::t_7c4b79978611af 25,46,48,67,70,76-78,80,84-89
+  s_6896d8602854c5::t_8737d75653698d 79
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e71678c7384a3a33e653cf5a43a89b9c1ff0cec0",
+  "prompts": {},
+  "sessions": {
+    "s_6896d8602854c5": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a17173-2109-70a6-9a9f-e92c3fd70890",
+        "model": "deepseek-v4.1-flash"
+      },
+      "human_author": "htynkn <htynkn@gmail.com>"
+    }
+  }
+}
