@@ -346,14 +346,28 @@ def main():
     chk("Lid 顶面", bb.max.Z, Z_TOP)
     chk("Lid 实体数", len(lid.solids()), 1)
 
-    # PCB 与两件的精确干涉（把壳体逆平移到 PCB 局部坐标后求交）
+    # PCB 与两件的精确干涉（把壳体逆平移到 PCB 局部坐标后求交）。
+    # 整 compound 直接布尔交在 CI 的 2 核 runner 上极慢（曾 >5min 超时被杀），
+    # 所以先用包围盒粗筛，只对可能接触壳体的实体逐个求交：
+    # 包围盒不相交 => 交集必为空，结果与整compound布尔完全等价。
     back = Pos(-L.dx, -L.dy, -L.dz)
     pcb = pcb_model.import_step(str(m.path))
+    pcb_solids = pcb.solids()
     for name, part in (("Base", base), ("Lid", lid)):
         t = time.time()
         log(f"  干涉检查 PCB ∩ {name} ...")
-        inter = pcb & (back * part)
-        v = sum(s.volume for s in inter.solids()) if inter is not None else 0.0
+        pb = (back * part).bounding_box()
+        v, n_hit = 0.0, 0
+        for s in pcb_solids:
+            sb = s.bounding_box()
+            if (sb.min.X <= pb.max.X and pb.min.X <= sb.max.X
+                    and sb.min.Y <= pb.max.Y and pb.min.Y <= sb.max.Y
+                    and sb.min.Z <= pb.max.Z and pb.min.Z <= sb.max.Z):
+                n_hit += 1
+                inter = s & (back * part)
+                if inter is not None:
+                    v += sum(x.volume for x in inter.solids())
+        log(f"    包围盒粗筛: {n_hit}/{len(pcb_solids)} 实体参与布尔")
         good = v < 0.01
         ok &= good
         print(f"  {'✓' if good else '✗'} PCB ∩ {name:17s} {v:9.4f} mm³"
