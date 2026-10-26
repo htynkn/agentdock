@@ -34,7 +34,8 @@ Two printed parts, **no supports needed**:
   from below, wall openings (USB-C, toggle switch, buzzer ports, ESP32 antenna
   vents)
 * **Lid** — 1.6 mm top plate with a locating lip (notched at the four posts),
-  4 screw posts with glued knurled nuts, 3 key windows (19 × 19), Ø13 knob
+  4 screw posts with glued knurled nuts (**Ø3.8 bore from the post foot → cavity
+  floor**, so the Ø3.5 nut can actually be pushed in), 3 key windows (19 × 19), Ø13 knob
   recess + Ø7.6 shaft hole, WS2812 light port as a **stepped** counterbore
   (Ø8 → Ø5.2 → Ø3.4)
 
@@ -44,6 +45,7 @@ on the printing platform:
 | Check | Limit | Why |
 |---|---|---|
 | Wall thickness (ray casting, `thickness_check.py`) | no surface thinner than 0.5 mm | shallow cones and half-millimetre rings get flagged as "thin wall" |
+| Nut pass-through | a Ø3.4 probe swept from each post foot to the cavity floor must leave 0 mm³ | the Ø3.5 knurled nut has to physically enter the post; a Ø2.7 sleeve in the way is invisible to the "is the hole open?" check |
 | Topology | no edge < 0.02 mm, no face < 1e-4 mm², single valid solid | resin/SLA services reject such geometry as "bad edges" |
 
 Key dimensions (derived from the PCB STEP at load time — not hard-coded):
@@ -57,7 +59,7 @@ Key dimensions (derived from the PCB STEP at load time — not hard-coded):
 | Mounting holes | 4 × Ø2.7, PCB local (1.65, 3.0) / (87.65, 3.0) / (1.65, 40.0) / (87.65, 40.0) |
 | Key windows | 3 × 19 × 19 mm centered on the key stems |
 | Encoder hole | Ø7.6 through + Ø13 × 0.8 knob skirt recess, concentric with the EC11 bushing (0.00 mm offset) |
-| Min wall thickness | 0.80 mm (Lid) / 0.60 mm (Base), zero area below 0.5 mm |
+| Min wall thickness | 0.68 mm (Base) / 0.80 mm (Lid), zero area below 0.5 mm |
 | USB-C panel opening | 9.60 × 3.86 mm, **centered on the plug cavity** |
 | PCB hole pattern | 86.0 × 37.0 mm, symmetric about (44.65, 21.50) while the board is centered at (46.00, 21.50) → the pattern sits 1.35 mm left of the board centre |
 
@@ -73,23 +75,35 @@ Key dimensions (derived from the PCB STEP at load time — not hard-coded):
 z = 0      base floor (screw head sunk: Ø4.8 × 2.0 counterbore)
 z = 5.0    boss tops / PCB bottom face
 z = 6.586  PCB top face — 3 of the 4 lid posts rest here and clamp the board
-z = 11.29  nut cavity bottom, uniform on all 4 corners (the encoder-corner
-           post rests on the encoder metal bracket + 0.2 mm instead of the PCB)
-z = 11.29–15.5  blind nut cavity Ø3.8 × 4.2 (nut L4.0 seats flush on the bottom)
+z = 11.29  nut cavity mouth, uniform on all 4 corners (the encoder-corner
+           post rests on the encoder metal bracket + 0.2 mm instead of the PCB,
+           so its foot is at 11.29 and its cavity starts right at the foot)
+z = 11.29–15.49  nut cavity Ø3.8 × 4.2; the nut is pushed in until it seats
+           against the cavity ceiling, i.e. it lives at z = 11.49–15.49
 ```
+
+* The bore from every post foot up to the cavity floor is **Ø3.8, not Ø2.7**.
+  An earlier revision left a Ø2.7 "screw guide" sleeve between the post foot and
+  the cavity mouth; the Ø3.5 nut cannot pass it, so the three posts that rest on
+  the PCB could never be fitted with a nut (the screws just spun). The build now
+  asserts nut pass-through (see the self-checks) and the four posts look
+  identical from below: Ø4.4 mouth step + Ø3.8 bore.
 
 * The Ø3.8 cavity leaves 0.15 mm per side around the Ø3.5 knurled nut for the
   epoxy layer; the knurl bites into the cured adhesive.
 * The cavity mouth uses a **Ø4.4 × 0.8 step** (not a 45° × 0.5 chamfer): a
   chamfer leaves only 0.42 mm of sloped wall between the cone and the Ø6 post
   surface, which is thin enough to be rejected; the step leaves 0.80 mm and its
-  ledge doubles as the glue reservoir. The step must be ≥ 0.5 mm deep, otherwise
-  the Ø4.4↔Ø3.8 ring land itself is a 0.4 mm thin wall.
+  ledge doubles as the glue reservoir. The step sits at the **post foot** on all
+  four posts (on the three tall posts it is 4.7 mm below the cavity mouth). It
+  must be ≥ 0.5 mm deep, otherwise the Ø4.4↔Ø3.8 ring land itself is a 0.4 mm
+  thin wall.
 * The Ø4.8 head counterbore keeps 0.60 mm between it and the Ø6 boss OD (Ø5.0
   leaves exactly 0.50, right at the threshold).
-* M2.5 × 12 engages ~2.7 mm (≈ 5 threads); the tip stays inside the through-hole
-  nut and never bottoms out. M2.5 × 10 is too short (≈ 1.4 threads), × 14 hits
-  the cavity floor — use **× 12**.
+* M2.5 × 12 engages ~2.4 mm (≈ 4.5 threads); the tip (z = 13.90) stays inside
+  the through-hole nut (z = 11.49–15.49) and never bottoms out — the build
+  asserts engagement ≥ 2.0 mm and a ≥ 0.5 mm gap under the tip. M2.5 × 10 is
+  too short (≈ 0.9 thread), × 14 hits the cavity floor — use **× 12**.
 * Note: the encoder-corner post cannot reach the PCB (the encoder's metal
   bracket is in the way), so all four nut cavities are raised to one height and
   that post rests on the bracket. The other three posts clamp the PCB; the
@@ -121,7 +135,10 @@ failure: outer dimensions, single-solid check, exact boolean interference
 (`PCB ∩ Base`, `PCB ∩ Lid` must both be < 0.01 mm³), screw passage (the Ø4.8
 counterbore and Ø2.7 clearance hole must be empty — the right-hand bosses carry
 a gusset across the screw area, so the holes are cut **after** the gussets),
-wall thickness and topology.
+**nut pass-through** (a Ø3.4 × full-travel probe swept from each post foot to the
+cavity floor must be empty — this is what catches a post that is too narrow for
+the nut), screw engagement (≥ 2.0 mm, tip must not bottom out), wall thickness
+and topology.
 
 ### After a PCB revision
 
@@ -148,8 +165,11 @@ git-ignored.
 
 ## Assembly
 
-1. Glue the 4 knurled nuts into the lid posts (insert from the post bottom,
-   push to the cavity floor — it seats flush automatically).
+1. Glue the 4 knurled nuts into the lid posts: butter the nut with AB epoxy,
+   push it in **from the post foot** and keep pushing until it bottoms out
+   against the cavity ceiling (4.7 mm in on the three PCB posts, ~flush on the
+   encoder post). Threading the nut onto a spare M2.5 screw or a Ø2.5 rod makes
+   a handy insertion tool — hold ~30 s until the epoxy grabs.
 2. Drop the PCB into the base; the Ø2.7 holes align over the bosses.
 3. Place the lid; the lip locates in the cavity, posts rest on the PCB.
 4. Drive 4 × M2.5 × 12 pan-head screws **from the bottom** — heads sink flush
