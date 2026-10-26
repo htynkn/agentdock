@@ -1,0 +1,28 @@
+hardware/enclosure/enclosure.py
+  s_bcaf6c10cf6554::t_b64b5645af99ed 493-515
+  s_bcaf6c10cf6554::t_96ba86315cd52c 68,80-81
+  s_bcaf6c10cf6554::t_4b09c4d601e9c1 62,64-66
+  s_bcaf6c10cf6554::t_c6d5d6e71b2034 72
+  s_bcaf6c10cf6554::t_df08b66a85b68e 18,74-79,351-353,358-360
+hardware/README.md
+  s_bcaf6c10cf6554::t_cd43b64d89d383 98-100
+  s_bcaf6c10cf6554::t_3f1a0758adc72a 48
+  s_bcaf6c10cf6554::t_299c0dec93fa63 103-106
+  s_bcaf6c10cf6554::t_532191bc609920 37-38,62,78-82,85-91,97,138-141,168-172
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0ed1b0ac2ca6d621081affc0969429c19a422958",
+  "prompts": {},
+  "sessions": {
+    "s_bcaf6c10cf6554": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a176a6-2dc1-7106-b1bc-2b29dac50115",
+        "model": "deepseek-v4.1-flash"
+      },
+      "human_author": "htynkn <htynkn@gmail.com>"
+    }
+  }
+}
