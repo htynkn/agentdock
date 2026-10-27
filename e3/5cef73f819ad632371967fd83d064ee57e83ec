@@ -1,0 +1,20 @@
+firmware/main/fx.c
+  s_06c698ffc01c85::t_2e1dadd06682d4 156,176-182,231-233
+  s_06c698ffc01c85::t_c83446f146eca6 225
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e35cef73f819ad632371967fd83d064ee57e83ec",
+  "prompts": {},
+  "sessions": {
+    "s_06c698ffc01c85": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a17b37-e28c-7791-b39d-349671af4e9e",
+        "model": "glm-5.3"
+      },
+      "human_author": "htynkn <htynkn@gmail.com>"
+    }
+  }
+}
