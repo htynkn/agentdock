@@ -1,0 +1,19 @@
+pi-plugin/tsconfig.json
+  s_06c698ffc01c85::t_07e77fd99fbadd 11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7aa47d9755d4e963f83712c9f9f0d2756146db55",
+  "prompts": {},
+  "sessions": {
+    "s_06c698ffc01c85": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a17b37-e28c-7791-b39d-349671af4e9e",
+        "model": "deepseek-flash"
+      },
+      "human_author": "htynkn <htynkn@gmail.com>"
+    }
+  }
+}
