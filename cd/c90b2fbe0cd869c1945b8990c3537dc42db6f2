@@ -1,0 +1,19 @@
+pi-plugin/panel.ts
+  s_06c698ffc01c85::t_99aa2c5bd2c571 246
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cdc90b2fbe0cd869c1945b8990c3537dc42db6f2",
+  "prompts": {},
+  "sessions": {
+    "s_06c698ffc01c85": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a17b37-e28c-7791-b39d-349671af4e9e",
+        "model": "deepseek-v4.1-flash"
+      },
+      "human_author": "htynkn <htynkn@gmail.com>"
+    }
+  }
+}
