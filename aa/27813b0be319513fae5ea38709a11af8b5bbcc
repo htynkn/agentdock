@@ -1,0 +1,21 @@
+pi-plugin/index.ts
+  s_06c698ffc01c85::t_695f81c57ef761 156-159
+pi-plugin/panel.ts
+  s_06c698ffc01c85::t_0f7aaa4f8d557c 2,4-6,8,10-11,13,22-29,34-280,284,288-289,294,303,330
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "aa27813b0be319513fae5ea38709a11af8b5bbcc",
+  "prompts": {},
+  "sessions": {
+    "s_06c698ffc01c85": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a17b37-e28c-7791-b39d-349671af4e9e",
+        "model": "glm-5.3"
+      },
+      "human_author": "htynkn <htynkn@gmail.com>"
+    }
+  }
+}
