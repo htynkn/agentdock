@@ -1,0 +1,25 @@
+pi-plugin/ble.ts
+  s_06c698ffc01c85::t_1fba33e089d61b 45,64-82,165,192
+pi-plugin/index.ts
+  s_06c698ffc01c85::t_8c82cca6c8c1ea 156-157,160
+pi-plugin/panel.ts
+  s_06c698ffc01c85::t_9c568e22f94e71 245-254,263
+  s_06c698ffc01c85::t_7a082c5ccef403 151,188-204,227-230
+  s_06c698ffc01c85::t_b3951c41f7301d 44,46,56,60-61
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d465c9915814674ad209d851c8d07bb1e6392433",
+  "prompts": {},
+  "sessions": {
+    "s_06c698ffc01c85": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a17b37-e28c-7791-b39d-349671af4e9e",
+        "model": "deepseek-v4.1-flash"
+      },
+      "human_author": "htynkn <htynkn@gmail.com>"
+    }
+  }
+}
