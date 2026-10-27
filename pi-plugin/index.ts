@@ -153,7 +153,11 @@ export default function agentDeckExtension(pi: ExtensionAPI) {
     lastCtx = ctx;
     let running = true;
     while (running) {
-      const action: PanelAction | null = await showPanel(ctx, channel, config);
+      /* 传函数而非快照: 面板重绘时实时读取, 面板停留期间状态变化也能反映 */
+      const action: PanelAction | null = await showPanel(ctx, channel, config, () => ({
+        busy,
+        scrollAvailable: scroller.available,
+      }));
       if (!action || action.kind === "exit") break;
 
       switch (action.kind) {

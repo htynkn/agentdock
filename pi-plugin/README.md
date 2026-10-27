@@ -104,6 +104,17 @@ The extension talks to `firmware/main/deck.c` over a custom GATT service:
 {"t":"s","st":"busy"}
 ```
 
+## Development
+
+```bash
+npm install
+npm run typecheck   # tsc --noEmit
+npm test            # vitest: 纯逻辑 + /dock 面板渲染与交互
+```
+
+单测不依赖真实蓝牙硬件: BLE 通道与 pi 的 `ctx.ui` 都是 mock 的,
+主题用真实 ANSI 转义以保证宽度计算与线上一致。
+
 ## Troubleshooting
 
 - Extension logs are prefixed with `[agentdock]` in non-TUI modes.
