@@ -41,6 +41,7 @@ export class DeckChannel {
   private stateChar: any = null;
   private disposed = false;
   private connecting = false;
+  private lastRssi: number | null = null;
 
   constructor(private onEvent: (msg: any) => void, private onConnection: (connected: boolean) => void, log: Log = (...a) => console.log(...a)) {
     this.log = log;
@@ -52,6 +53,30 @@ export class DeckChannel {
 
   get deviceName(): string {
     return this.peripheral?.advertisement?.localName ?? "";
+  }
+
+  /** 缓存的信号强度 (连接时记录, refreshRssi 更新) */
+  get rssi(): number | null {
+    return this.lastRssi;
+  }
+
+  /** 主动读取已连接设备的 RSSI; 失败/超时返回缓存值 (无缓存 = null) */
+  async refreshRssi(timeoutMs = 1500): Promise<number | null> {
+    const p: any = this.peripheral;
+    if (!p || typeof p.updateRssiAsync !== "function") return this.lastRssi;
+    try {
+      const v = await Promise.race([
+        p.updateRssiAsync(),
+        new Promise<null>((r) => setTimeout(() => r(null), timeoutMs)),
+      ]);
+      if (typeof v === "number") {
+        this.lastRssi = v;
+        return v;
+      }
+    } catch {
+      /* 读取失败沿用缓存值 */
+    }
+    return this.lastRssi;
   }
 
   /** 扫描所有 AgentDock 设备 (不连接), 返回按信号强度排序的列表 */
@@ -108,6 +133,7 @@ export class DeckChannel {
       }
 
       this.peripheral = p;
+      this.lastRssi = typeof target.rssi === "number" ? target.rssi : null;
       /* noble 会缓存同一外设/特征的对象实例。重连时若不先清空旧监听器，
        * disconnect / data 监听会逐次叠加 → 一次按键事件被重复投递 N 次
        * （重连过几次就重复几份）。这是“按一下发多条消息”的根因。 */
@@ -194,6 +220,7 @@ export class DeckChannel {
   private disposeLink(): void {
     this.eventChar = null;
     this.stateChar = null;
+    this.lastRssi = null;
     if (this.peripheral) {
       try { this.peripheral.removeAllListeners("disconnect"); } catch {}
       try { this.peripheral.disconnect(); } catch {}

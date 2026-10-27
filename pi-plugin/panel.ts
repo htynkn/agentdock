@@ -1,14 +1,24 @@
 /*
  * panel.ts — /dock 可视化管理面板
  *
- * TUI 模式: ctx.ui.custom() 渲染主题化仪表盘 (状态区 + SelectList 菜单),
+ * TUI 模式: 手工合成布局 (圆角状态框 + 按键图例 + SelectList 菜单),
+ *   状态框内显示连接状态、信号强度条、agent 状态与旋钮可用性;
  *   扫描流程带 Loader 动画与信号强度条, 灯效测试用彩色圆点;
  * RPC 等非交互模式: 回退到 ctx.ui 标准对话框 (逻辑等价).
- * 面板只负责交互, 不直接操作 BLE — 返回动作由 index.ts 执行.
- * 面板状态 (busy / 旋钮) 为打开时刻的快照, 每次操作后循环重开即刷新.
+ *
+ * 注意: pi-tui 的 Text 默认 paddingX=1/paddingY=1 (上下各一空行),
+ * 面板内所有行用它时都显式传 0,0, 否则会多出空行与缩进.
  */
-import { DynamicBorder, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Container, Loader, type SelectItem, SelectList, Text, truncateToWidth } from "@earendil-works/pi-tui";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import {
+  Container,
+  Loader,
+  type SelectItem,
+  SelectList,
+  Text,
+  truncateToWidth,
+  visibleWidth,
+} from "@earendil-works/pi-tui";
 import type { DeckConfig } from "./config.js";
 import type { DeckChannel, DeckPeripheralInfo } from "./ble.js";
 
@@ -46,7 +56,9 @@ async function showPanelTui(
   status: PanelStatus,
 ): Promise<PanelAction | null> {
   for (;;) {
-    const pick = await mainMenu(ctx, channel, config, status);
+    /* 每次进入面板主动刷新一次信号强度 (超时/失败回退缓存) */
+    const rssi = channel.connected ? await channel.refreshRssi() : null;
+    const pick = await mainMenu(ctx, channel, config, status, rssi);
     if (!pick) return null; // Esc / 退出
 
     switch (pick) {
@@ -78,45 +90,92 @@ async function showPanelTui(
   }
 }
 
-/* 主菜单: 返回用户选择的子流程标识, null = 关闭面板 */
+/* ---------------- 布局工具 ---------------- */
+
+/** 单行 Text (无上下空行/左右缩进) */
+const line = (s: string) => new Text(s, 0, 0);
+
+/** 整宽水平分隔线 (随宽度铺满) */
+class Rule {
+  constructor(private style: (s: string) => string) {}
+  invalidate(): void {}
+  render(width: number): string[] {
+    return [this.style("─".repeat(Math.max(1, width)))];
+  }
+}
+
+function padTo(s: string, width: number): string {
+  const rest = width - visibleWidth(s);
+  return rest > 0 ? s + " ".repeat(rest) : truncateToWidth(s, width);
+}
+
+/** 左对齐 + 右对齐铺满一行; 空间不足时退化为左内容截断 */
+function spread(left: string, right: string, width: number): string {
+  const lw = visibleWidth(left);
+  const rw = visibleWidth(right);
+  if (lw + rw + 1 > width) return truncateToWidth(left, width);
+  return left + " ".repeat(width - lw - rw) + right;
+}
+
+/** 圆角状态框: 内容行左右各留 1 空格, 框线用 accent 色 */
+function boxed(content: string[], width: number, border: (s: string) => string): string[] {
+  const inner = Math.max(1, width - 4);
+  const edge = "─".repeat(Math.max(1, width - 2));
+  const close = border("│");
+  return [
+    border(`╭${edge}╮`),
+    ...content.map((l) => `${close} ${padTo(l, inner)} ${close}`),
+    border(`╰${edge}╯`),
+  ];
+}
+
+/** RSSI → 4 段信号条 (BLE 常见区间 -50 ~ -85 dBm) */
+function rssiBars(rssi: number | null): string {
+  if (rssi === null) return "▁▁▁▁";
+  if (rssi >= -55) return "▂▄▆█";
+  if (rssi >= -65) return "▂▄▆▁";
+  if (rssi >= -75) return "▂▄▁▁";
+  return "▂▁▁▁";
+}
+
+function rssiText(rssi: number | null): string {
+  return rssi === null ? "信号未知" : `${rssiBars(rssi)} ${rssi} dBm`;
+}
+
+/* ---------------- 主菜单 ---------------- */
+
 function mainMenu(
   ctx: ExtensionContext,
   channel: DeckChannel,
   config: DeckConfig,
   status: PanelStatus,
+  rssi: number | null,
 ): Promise<string | null> {
   const macro2 = config.macros[0] ?? "(未配置)";
   const macro3 = config.macros[1] ?? "(未配置)";
 
   return ctx.ui.custom<string | null>((tui, theme, _kb, done) => {
-    const container = new Container();
-    const border = () => new DynamicBorder((s) => theme.fg("borderMuted", s));
-    const pad = (s: string) => `  ${s}`;
+    /* --- 状态框内容 --- */
+    const connLeft = channel.connected
+      ? `${theme.fg("success", "●")} 已连接  ${theme.bold(channel.deviceName)}`
+      : `${theme.fg("warning", "○")} 未连接  ${theme.fg("muted", "LED 心跳待命")}`;
+    const connRight = channel.connected
+      ? theme.fg(rssi === null ? "muted" : rssi >= -75 ? "success" : "warning", rssiText(rssi))
+      : theme.fg("dim", "— dBm");
 
-    /* 标题 + 连接状态 */
-    container.addChild(
-      new Text(theme.bold(theme.fg("accent", "AgentDock 管理面板")) + theme.fg("dim", "  ·  /dock")),
-    );
-    const conn = channel.connected
-      ? theme.fg("success", `● 已连接 ${channel.deviceName}`)
-      : theme.fg("warning", "○ 未连接 · 设备 LED 心跳待命");
-    const session = status.busy
-      ? theme.fg("accent", "agent 运行中")
-      : theme.fg("muted", "agent 空闲");
-    const scroll = status.scrollAvailable
+    const sessionLeft = status.busy
+      ? `${theme.fg("accent", "◐")} agent 运行中`
+      : `${theme.fg("muted", "◯")} agent 空闲`;
+    const sessionRight = status.scrollAvailable
       ? theme.fg("muted", "旋钮滚动可用")
       : theme.fg("dim", "旋钮滚动不可用");
-    container.addChild(new Text(pad(`设备  ${conn}`)));
-    container.addChild(new Text(pad(`会话  ${session} · ${scroll}`)));
-    container.addChild(new Text(pad(`宏    KEY2「${macro2}」 · KEY3「${macro3}」`)));
-    container.addChild(border());
 
-    /* 菜单 */
+    /* --- 菜单项 --- */
     const items: SelectItem[] = [
-      { value: "bind", label: "扫描 / 绑定设备", description: "发现附近 AgentDock, 按信号强度排序" },
-      { value: "macro-2", label: "编辑宏 KEY2", description: `当前: ${macro2}` },
-      { value: "macro-3", label: "编辑宏 KEY3", description: `当前: ${macro3}` },
-      { value: "led", label: "测试灯效", description: "向设备推送状态灯效" },
+      { value: "bind", label: "扫描 / 绑定设备", description: "发现附近设备, 按信号强度排序" },
+      { value: "macro-2", label: "编辑宏 KEY2", description: `当前「${macro2}」` },
+      { value: "macro-3", label: "编辑宏 KEY3", description: `当前「${macro3}」` },
+      { value: "led", label: "测试灯效", description: "推送 busy / done / error / idle" },
       { value: "reconnect", label: "重新连接", description: "断开后立即重连" },
       { value: "exit", label: "退出", description: "关闭面板" },
     ];
@@ -129,14 +188,59 @@ function mainMenu(
     });
     list.onSelect = (item) => done(item.value);
     list.onCancel = () => done(null);
-    container.addChild(list);
 
-    container.addChild(border());
-    container.addChild(new Text(theme.fg("dim", "  ↑↓ 移动 · Enter 确认 · Esc 关闭")));
+    /* --- 渲染 --- */
+    let cachedWidth: number | undefined;
+    let cachedLines: string[] | undefined;
+    const invalidate = () => {
+      cachedWidth = undefined;
+      cachedLines = undefined;
+      list.invalidate();
+    };
+
+    const render = (width: number): string[] => {
+      if (cachedLines && cachedWidth === width) return cachedLines;
+      const w = Math.max(20, width);
+
+      const title = spread(
+        theme.bold(theme.fg("accent", "AgentDock")) + theme.fg("muted", " 管理面板"),
+        theme.fg("dim", "/dock"),
+        w,
+      );
+
+      const legend = spread(
+        theme.fg("muted", "按键 ") +
+          theme.fg("text", "KEY1") + theme.fg("dim", " 打断/长按静音 · ") +
+          theme.fg("text", "KEY2") + theme.fg("dim", `「${macro2}」 · `) +
+          theme.fg("text", "KEY3") + theme.fg("dim", `「${macro3}」`),
+        theme.fg("muted", "旋钮 ") + theme.fg("dim", "滚动/继续"),
+        w,
+      );
+
+      const rule = theme.fg("borderMuted", "─".repeat(w));
+
+      const out: string[] = [
+        title,
+        "",
+        ...boxed(
+          [spread(connLeft, connRight, Math.max(1, w - 4)), spread(sessionLeft, sessionRight, Math.max(1, w - 4))],
+          w,
+          (s) => theme.fg("border", s),
+        ),
+        legend,
+        rule,
+        ...list.render(w),
+        rule,
+        theme.fg("dim", "↑↓ 移动 · Enter 确认 · Esc 关闭"),
+      ];
+      cachedWidth = width;
+      cachedLines = out.map((l) => truncateToWidth(l, width));
+      return cachedLines;
+    };
 
     return {
-      render: (width: number) => container.render(width).map((l) => truncateToWidth(l, width)),
-      invalidate: () => container.invalidate(),
+      render,
+      invalidate,
       handleInput: (data: string) => {
         list.handleInput(data);
         tui.requestRender();
@@ -145,60 +249,69 @@ function mainMenu(
   });
 }
 
-/* 扫描流程: Loader 动画 → 设备列表 (信号强度条). 返回选中的设备名, null = 取消/无设备 */
+/* ---------------- 扫描流程 ---------------- */
+
 function scanFlow(ctx: ExtensionContext, channel: DeckChannel): Promise<string | null> {
   return ctx.ui.custom<string | null>((tui, theme, _kb, done) => {
     const container = new Container();
-    const border = () => new DynamicBorder((s) => theme.fg("borderMuted", s));
+    const rule = () => new Rule((s) => theme.fg("borderMuted", s));
 
-    container.addChild(new Text(theme.bold(theme.fg("accent", "扫描 AgentDock 设备"))));
-    container.addChild(border());
+    container.addChild(line(theme.bold(theme.fg("accent", "扫描 AgentDock 设备"))));
+    const headRule = new Rule((s) => theme.fg("borderMuted", s));
+    container.addChild(headRule);
 
     const loader = new Loader(
       tui,
       (s) => theme.fg("accent", s),
       (s) => theme.fg("muted", s),
-      "BLE 扫描中 (约 8s), Esc 取消 ...",
+      "BLE 扫描中 (约 8s) · Esc 取消",
     );
     container.addChild(loader);
-    container.addChild(border());
+    container.addChild(rule());
 
     let list: SelectList | null = null;
     let resolved = false;
     const finish = (name: string | null) => {
       if (resolved) return;
       resolved = true;
+      loader.stop();
       done(name);
     };
 
     loader.start();
     void channel.scan().then((devices) => {
       if (resolved) return; // 用户已取消
-      loader.stop();
       container.removeChild(loader);
+      container.removeChild(headRule);
       if (!devices.length) {
         finish(null);
         return;
       }
-      const items: SelectItem[] = devices.map((d: DeckPeripheralInfo) => ({
-        value: d.name,
-        label: d.name,
-        description: `${rssiBars(d.rssi)} ${d.rssi} dBm`,
-      }));
+      const items: SelectItem[] = devices.map((d: DeckPeripheralInfo) => {
+        const bound = channel.connected && d.name === channel.deviceName;
+        return {
+          value: d.name,
+          label: bound ? `${d.name} ${theme.fg("success", "✓")}` : d.name,
+          description:
+            theme.fg(d.rssi >= -75 ? "success" : "warning", rssiBars(d.rssi)) +
+            theme.fg("muted", ` ${String(d.rssi).padStart(4)} dBm`) +
+            (bound ? theme.fg("dim", "  · 当前绑定") : ""),
+        };
+      });
       list = new SelectList(items, Math.min(items.length, 8), {
         selectedPrefix: (t) => theme.fg("accent", t),
         selectedText: (t) => theme.fg("accent", theme.bold(t)),
-        description: (t) => theme.fg("muted", t),
+        description: (t) => t,
         scrollInfo: (t) => theme.fg("dim", t),
         noMatch: (t) => theme.fg("warning", t),
       });
       list.onSelect = (item) => finish(item.value);
       list.onCancel = () => finish(null);
       container.addChild(
-        new Text(theme.fg("muted", `  发现 ${devices.length} 台设备 — 回车绑定, Esc 取消`)),
+        line(theme.fg("muted", `发现 ${devices.length} 台设备 · 回车绑定 · Esc 取消`)),
       );
       container.addChild(list);
-      container.addChild(border());
+      container.addChild(rule());
       container.invalidate();
       tui.requestRender();
     });
@@ -208,7 +321,6 @@ function scanFlow(ctx: ExtensionContext, channel: DeckChannel): Promise<string |
       invalidate: () => container.invalidate(),
       handleInput: (data: string) => {
         if (data === "\x1b") {
-          loader.stop();
           finish(null);
           return;
         }
@@ -220,25 +332,27 @@ function scanFlow(ctx: ExtensionContext, channel: DeckChannel): Promise<string |
   });
 }
 
-/* 灯效测试: 彩色圆点列表. 返回状态名, null = 取消 */
+/* ---------------- 灯效测试 ---------------- */
+
 function ledFlow(ctx: ExtensionContext, channel: DeckChannel): Promise<string | null> {
   return ctx.ui.custom<string | null>((tui, theme, _kb, done) => {
-    const connected = channel.connected;
     const container = new Container();
-    const border = () => new DynamicBorder((s) => theme.fg("borderMuted", s));
+    const rule = () => new Rule((s) => theme.fg("borderMuted", s));
 
-    container.addChild(new Text(theme.bold(theme.fg("accent", "测试灯效")) + theme.fg("dim", "  ·  选择要推送的状态")));
-    if (!connected) {
-      container.addChild(new Text(theme.fg("warning", "  ⚠ 设备未连接, 推送将不会生效")));
+    container.addChild(
+      line(theme.bold(theme.fg("accent", "测试灯效")) + theme.fg("muted", "  推送一次状态给设备")),
+    );
+    if (!channel.connected) {
+      container.addChild(line(theme.fg("warning", "⚠ 设备未连接, 推送不会生效")));
     }
-    container.addChild(border());
+    container.addChild(rule());
 
-    /* label 自带彩色圆点 → selectedText 保持原样, 不再整体包色 */
+    /* label 自带彩色圆点 → selectedText 保持原样, 不整体染色 */
     const items: SelectItem[] = [
-      { value: "busy", label: `${theme.fg("success", "●")} busy`, description: "绿色呼吸 — agent 运行中" },
-      { value: "done", label: `${theme.fg("text", "●")} done`, description: "白色双闪 — 任务完成" },
-      { value: "error", label: `${theme.fg("error", "●")} error`, description: "红色三连闪 — 工具出错" },
-      { value: "idle", label: `${theme.fg("accent", "●")} idle`, description: "蓝色微亮 — 待命" },
+      { value: "busy", label: `${theme.fg("success", "●")} busy`, description: "绿色呼吸 · agent 运行中" },
+      { value: "done", label: `${theme.fg("text", "●")} done`, description: "白色双闪 · 任务完成" },
+      { value: "error", label: `${theme.fg("error", "●")} error`, description: "红色三连闪 · 工具出错" },
+      { value: "idle", label: `${theme.fg("accent", "●")} idle`, description: "蓝色微亮 · 待命" },
     ];
     const list = new SelectList(items, items.length, {
       selectedPrefix: (t) => theme.fg("accent", t),
@@ -250,8 +364,8 @@ function ledFlow(ctx: ExtensionContext, channel: DeckChannel): Promise<string | 
     list.onSelect = (item) => done(item.value);
     list.onCancel = () => done(null);
     container.addChild(list);
-    container.addChild(border());
-    container.addChild(new Text(theme.fg("dim", "  ↑↓ 移动 · Enter 推送 · Esc 取消")));
+    container.addChild(rule());
+    container.addChild(line(theme.fg("dim", "↑↓ 移动 · Enter 推送 · Esc 取消")));
 
     return {
       render: (width: number) => container.render(width).map((l) => truncateToWidth(l, width)),
@@ -264,14 +378,6 @@ function ledFlow(ctx: ExtensionContext, channel: DeckChannel): Promise<string | 
   });
 }
 
-/** RSSI → 信号强度条 (BLE 常见区间 -40 ~ -95 dBm) */
-function rssiBars(rssi: number): string {
-  if (rssi >= -55) return "▂▄▆█";
-  if (rssi >= -67) return "▂▄▆ ";
-  if (rssi >= -78) return "▂▄  ";
-  return "▂   ";
-}
-
 /* ---------------- 非 TUI 回退 (标准对话框) ---------------- */
 
 async function showPanelFallback(
@@ -280,7 +386,7 @@ async function showPanelFallback(
   config: DeckConfig,
 ): Promise<PanelAction | null> {
   const status = channel.connected
-    ? `✅ 已连接 ${channel.deviceName}`
+    ? `✅ 已连接 ${channel.deviceName} (${rssiText(channel.rssi)})`
     : "⚪ 未连接 (设备 LED 心跳待命)";
   const macroLine = `KEY2→${config.macros[0] ?? "(空)"}   KEY3→${config.macros[1] ?? "(空)"}`;
 
@@ -300,7 +406,7 @@ async function showPanelFallback(
       }
       const picked = await ctx.ui.select(
         `发现 ${devices.length} 台设备 (按信号强度排序, 回车绑定):`,
-        devices.map((d) => `${d.name}   ${rssiBars(d.rssi)} ${d.rssi} dBm`),
+        devices.map((d) => `${d.name}   ${rssiText(d.rssi)}`),
       );
       if (picked === undefined) return null;
       const name = picked.split(/\s{2,}/)[0];
