@@ -99,3 +99,7 @@ jobs:
 
       - name: Typecheck
         run: npm run typecheck
+
+      # 单测: 纯逻辑 + TUI 渲染/交互 (mock theme 与 channel, 不需要真实蓝牙)
+      - name: Unit tests
+        run: npm test

@@ -297,7 +297,7 @@ environment.
 | Job | What it does |
 |---|---|
 | **Firmware (ESP32-C2)** | Builds `firmware/` with ESP-IDF v5.4.2 in the official `espressif/idf` container, reports the image size and uploads the flashable binaries as a workflow artifact on every run, including pull requests. |
-| **Plugin (TypeScript)** | Installs `pi-plugin/` with `npm ci --ignore-scripts`, checks that the lockfile uses the public npm registry, and runs `npm run typecheck`. |
+| **Plugin (TypeScript)** | Installs `pi-plugin/` with `npm ci --ignore-scripts`, checks that the lockfile uses the public npm registry, then runs `npm run typecheck` and `npm test` (Vitest unit tests for the BLE config layer, knob scrolling and the `/dock` panel rendering/interaction). |
 
 The firmware artifact is named `agentdock-firmware-<run-number>` and contains:
 
