@@ -35,8 +35,8 @@ Two printed parts, **no supports needed**:
   vents)
 * **Lid** — 1.6 mm top plate with a locating lip (notched at the four posts),
   4 screw posts with glued knurled nuts (**Ø3.8 bore from the post foot → cavity
-  floor**, so the Ø3.5 nut can actually be pushed in), 3 key windows (19 × 19), Ø13 knob
-  recess + Ø7.6 shaft hole, WS2812 light port as a **stepped** counterbore
+  ceiling**, so the Ø3.5 nut can actually be pushed in), 3 key windows (19 × 19), Ø13 knob
+  recess + Ø8.6 shaft hole, WS2812 light port as a **stepped** counterbore
   (Ø8 → Ø5.2 → Ø3.4)
 
 Two failure modes are asserted by the build itself instead of being discovered
@@ -58,7 +58,8 @@ Key dimensions (derived from the PCB STEP at load time — not hard-coded):
 | PCB support | 4 corner bosses + 5 longitudinal + 1 transverse rib, tops all at z = 5.0 |
 | Mounting holes | 4 × Ø2.7, PCB local (1.65, 3.0) / (87.65, 3.0) / (1.65, 40.0) / (87.65, 40.0) |
 | Key windows | 3 × 19 × 19 mm centered on the key stems |
-| Encoder hole | Ø7.6 through + Ø13 × 0.8 knob skirt recess, concentric with the EC11 bushing (0.00 mm offset) |
+| Encoder | PCB local (79.375, 31.746) — the 2026-10-27 PCB moved it 1.53 mm left of the previous (80.90, 31.75); all lid features follow the STEP, nothing is hard-coded |
+| Encoder hole | Ø8.6 through + Ø13 × 0.8 knob skirt recess, concentric with the EC11 bushing (0.00 mm offset; Ø8.6 leaves 0.8 mm around the Ø7 bushing so hole shrink from printing cannot jam it) |
 | Min wall thickness | 0.68 mm (Base) / 0.80 mm (Lid), zero area below 0.5 mm |
 | USB-C panel opening | 9.60 × 3.86 mm, **centered on the plug cavity** |
 | PCB hole pattern | 86.0 × 37.0 mm, symmetric about (44.65, 21.50) while the board is centered at (46.00, 21.50) → the pattern sits 1.35 mm left of the board centre |
@@ -67,27 +68,29 @@ Key dimensions (derived from the PCB STEP at load time — not hard-coded):
 
 | Part | Spec | Qty |
 |---|---|---|
-| Pan-head screw | **M2.5 × 12** (head Ø4.6 × 1.9) | 4 |
+| Pan-head screw | **M2.5 × 8** (head Ø4.6 × 1.9) | 4 |
 | Knurled brass nut | **M2.5, L4.0, Ø3.5 OD** (LCSC C51938993 or equivalent) | 4 |
 | Adhesive | AB (two-part epoxy) | — |
 
 ```
 z = 0      base floor (screw head sunk: Ø4.8 × 2.0 counterbore)
 z = 5.0    boss tops / PCB bottom face
-z = 6.586  PCB top face — 3 of the 4 lid posts rest here and clamp the board
-z = 11.29  nut cavity mouth, uniform on all 4 corners (the encoder-corner
-           post rests on the encoder metal bracket + 0.2 mm instead of the PCB,
-           so its foot is at 11.29 and its cavity starts right at the foot)
-z = 11.29–15.49  nut cavity Ø3.8 × 4.2; the nut is pushed in until it seats
-           against the cavity ceiling, i.e. it lives at z = 11.49–15.49
+z = 6.586  PCB top face
+z = 6.786  all four lid post feet — identical posts, length 11.71 mm
+           (PCB top + 0.2 mm contact sweep; the 2026-10-27 PCB moved the
+           encoder 1.53 mm left, so its metal bracket no longer sits under the
+           right-top mounting hole)
+z = 6.79–10.99  nut cavity Ø3.8 × 4.2, mouth at the post foot; the nut is
+           pushed in only 0.2 mm until it seats against the cavity ceiling,
+           i.e. it lives at z = 6.99–10.99, flush with the post foot
 ```
 
-* The bore from every post foot up to the cavity floor is **Ø3.8, not Ø2.7**.
-  An earlier revision left a Ø2.7 "screw guide" sleeve between the post foot and
-  the cavity mouth; the Ø3.5 nut cannot pass it, so the three posts that rest on
-  the PCB could never be fitted with a nut (the screws just spun). The build now
-  asserts nut pass-through (see the self-checks) and the four posts look
-  identical from below: Ø4.4 mouth step + Ø3.8 bore.
+* The bore from every post foot up to the cavity ceiling is **Ø3.8, not
+  Ø2.7**. An earlier revision left a Ø2.7 "screw guide" sleeve between the post
+  foot and the cavity mouth; the Ø3.5 nut cannot pass it, so the posts could
+  never be fitted with a nut (the screws just spun). The build now asserts nut
+  pass-through (see the self-checks) and the four posts look identical from
+  below: Ø4.4 mouth step + Ø3.8 bore.
 
 * The Ø3.8 cavity leaves 0.15 mm per side around the Ø3.5 knurled nut for the
   epoxy layer; the knurl bites into the cured adhesive.
@@ -95,19 +98,22 @@ z = 11.29–15.49  nut cavity Ø3.8 × 4.2; the nut is pushed in until it seats
   chamfer leaves only 0.42 mm of sloped wall between the cone and the Ø6 post
   surface, which is thin enough to be rejected; the step leaves 0.80 mm and its
   ledge doubles as the glue reservoir. The step sits at the **post foot** on all
-  four posts (on the three tall posts it is 4.7 mm below the cavity mouth). It
-  must be ≥ 0.5 mm deep, otherwise the Ø4.4↔Ø3.8 ring land itself is a 0.4 mm
-  thin wall.
+  four posts, i.e. right at the cavity mouth. It must be ≥ 0.5 mm deep,
+  otherwise the Ø4.4↔Ø3.8 ring land itself is a 0.4 mm thin wall.
 * The Ø4.8 head counterbore keeps 0.60 mm between it and the Ø6 boss OD (Ø5.0
   leaves exactly 0.50, right at the threshold).
-* M2.5 × 12 engages ~2.4 mm (≈ 4.5 threads); the tip (z = 13.90) stays inside
-  the through-hole nut (z = 11.49–15.49) and never bottoms out — the build
-  asserts engagement ≥ 2.0 mm and a ≥ 0.5 mm gap under the tip. M2.5 × 10 is
-  too short (≈ 0.9 thread), × 14 hits the cavity floor — use **× 12**.
-* Note: the encoder-corner post cannot reach the PCB (the encoder's metal
-  bracket is in the way), so all four nut cavities are raised to one height and
-  that post rests on the bracket. The other three posts clamp the PCB; the
-  fourth corner is held by the bracket itself.
+* M2.5 × 8 engages ~2.9 mm (≈ 6.5 threads); the tip (z = 9.90) stays inside the
+  through-hole nut (z = 6.99–10.99) and never bottoms out — the build asserts
+  engagement ≥ 2.0 mm and a ≥ 0.5 mm gap under the tip. With the nut cavity now
+  at the post foot (see below), **M2.5 × 12 / × 10 overshoot the cavity ceiling**
+  (tips at z = 13.90 / 11.90, ceiling at 10.99) — use **× 8**.
+* Note: all four posts are now the same length and all four rest on the PCB top
+  face. Up to the 2026-10-25 PCB revision the encoder sat over the right-top
+  mounting hole, its metal bracket forced that post to stop at z = 11.29 (7.2 mm
+  long) and all four nut cavities had to be raised to match, which is why the
+  older builds needed M2.5 × 12. The 2026-10-27 PCB moved the encoder 1.53 mm
+  left; the bracket is clear of the hole (its top is at z = 6.09, i.e. 0.70 mm
+  below the new post feet), so that exception is gone.
 
 ### Wall openings
 
@@ -166,14 +172,14 @@ git-ignored.
 ## Assembly
 
 1. Glue the 4 knurled nuts into the lid posts: butter the nut with AB epoxy,
-   push it in **from the post foot** and keep pushing until it bottoms out
-   against the cavity ceiling (4.7 mm in on the three PCB posts, ~flush on the
-   encoder post). Threading the nut onto a spare M2.5 screw or a Ø2.5 rod makes
-   a handy insertion tool — hold ~30 s until the epoxy grabs.
+   push it in **from the post foot** until it bottoms out against the cavity
+   ceiling — only 0.2 mm of travel now, i.e. the nut ends up flush with the post
+   foot. Threading the nut onto a spare M2.5 screw or a Ø2.5 rod makes a handy
+   insertion tool — hold ~30 s until the epoxy grabs.
 2. Drop the PCB into the base; the Ø2.7 holes align over the bosses.
 3. Place the lid; the lip locates in the cavity, posts rest on the PCB.
-4. Drive 4 × M2.5 × 12 pan-head screws **from the bottom** — heads sink flush
-   into the Ø5.0 counterbores.
+4. Drive 4 × M2.5 × 8 pan-head screws **from the bottom** — heads sink flush
+   into the Ø4.8 counterbores.
 
 ## CI
 

@@ -48,7 +48,7 @@ jobs:
       - name: Verify PCB STEP integrity
         working-directory: hardware
         env:
-          PCB_SHA256: 01a3affa7d8d6c736b807f8b1ef6fda37c2199d4e9e1803ef634b8368fa86bd5
+          PCB_SHA256: c2cc452744ae988aec39adde3026fe6c27d1a8bc326765c132a1ed0825038f39
         run: |
           echo "$PCB_SHA256  pcb/PCB.step" | sha256sum --check
           # PCB.step 被改版时：更新此哈希 + pcb_model.py 的 EXPECT 表
