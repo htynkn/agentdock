@@ -243,6 +243,7 @@ function mainMenu(
       invalidate,
       handleInput: (data: string) => {
         list.handleInput(data);
+        invalidate(); // 选中项可能已变 → 丢弃合成缓存, 否则箭头不动
         tui.requestRender();
       },
     };
