@@ -153,6 +153,7 @@ static volatile led_mode_t s_led_mode = LED_MODE_OFFLINE;
 static uint8_t s_led_base[3] = { 0, 0, 40 };      /* idle 蓝 (微亮) */
 static uint8_t s_led_active[3] = { 0, 0, 0 };
 static int s_led_flashes_left = 0;
+static bool s_led_flash_on = false;   /* FLASH_N 相位: true=亮(active) false=灭(黑) */
 static volatile bool s_led_on = false;
 static int64_t s_led_next_at = 0;
 #define LED_TICK_MS 100
@@ -172,12 +173,13 @@ static void apply_led(void)
         break;
     }
     case LED_MODE_FLASH_N: {
-        static bool on = false;
-        if (on) { on = false; }
-        else { on = true; s_led_flashes_left--; }
-        r = on ? s_led_active[0] : s_led_base[0];
-        g = on ? s_led_active[1] : s_led_base[1];
-        b = on ? s_led_active[2] : s_led_base[2];
+        /* 闪 = active↔黑 交替, 闪完回 base 常亮. 灭相必须是黑:
+         * 若灭相显示 base, error/done 会变成「红蓝/白蓝交替」而非纯色闪烁 */
+        if (s_led_flash_on) { s_led_flash_on = false; }
+        else { s_led_flash_on = true; s_led_flashes_left--; }
+        r = s_led_flash_on ? s_led_active[0] : 0;
+        g = s_led_flash_on ? s_led_active[1] : 0;
+        b = s_led_flash_on ? s_led_active[2] : 0;
         if (s_led_flashes_left <= 0) s_led_mode = LED_MODE_STATIC;
         break;
     }
@@ -220,11 +222,15 @@ void fx_set_agent_state(deck_state_t state)
         s_led_mode = LED_MODE_FLASH_N;
         s_led_active[0] = 40; s_led_active[1] = 40; s_led_active[2] = 40;   /* 白 */
         s_led_flashes_left = 4;   /* 双闪 = 亮灭亮灭 */
+        s_led_flash_on = true;    /* 先亮相, 首拍即见效果色 */
         break;
     case DECK_STATE_ERROR:
         s_led_mode = LED_MODE_FLASH_N;
         s_led_active[0] = 40; s_led_active[1] = 0; s_led_active[2] = 0;   /* 红 */
         s_led_flashes_left = 6;   /* 三连闪 */
+        s_led_flash_on = true;
+        break;
+    default:
         break;
     }
     s_led_next_at = 0;   /* 立即生效 */
