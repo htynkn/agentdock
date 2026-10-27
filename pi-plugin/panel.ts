@@ -41,9 +41,9 @@ export async function showPanel(
   ctx: ExtensionContext,
   channel: DeckChannel,
   config: DeckConfig,
-  status: PanelStatus,
+  getStatus: () => PanelStatus,
 ): Promise<PanelAction | null> {
-  if (ctx.mode === "tui") return showPanelTui(ctx, channel, config, status);
+  if (ctx.mode === "tui") return showPanelTui(ctx, channel, config, getStatus);
   return showPanelFallback(ctx, channel, config);
 }
 
@@ -53,12 +53,12 @@ async function showPanelTui(
   ctx: ExtensionContext,
   channel: DeckChannel,
   config: DeckConfig,
-  status: PanelStatus,
+  getStatus: () => PanelStatus,
 ): Promise<PanelAction | null> {
   for (;;) {
     /* 每次进入面板主动刷新一次信号强度 (超时/失败回退缓存) */
-    const rssi = channel.connected ? await channel.refreshRssi() : null;
-    const pick = await mainMenu(ctx, channel, config, status, rssi);
+    if (channel.connected) await channel.refreshRssi();
+    const pick = await mainMenu(ctx, channel, config, getStatus);
     if (!pick) return null; // Esc / 退出
 
     switch (pick) {
@@ -148,28 +148,12 @@ function mainMenu(
   ctx: ExtensionContext,
   channel: DeckChannel,
   config: DeckConfig,
-  status: PanelStatus,
-  rssi: number | null,
+  getStatus: () => PanelStatus,
 ): Promise<string | null> {
   const macro2 = config.macros[0] ?? "(未配置)";
   const macro3 = config.macros[1] ?? "(未配置)";
 
   return ctx.ui.custom<string | null>((tui, theme, _kb, done) => {
-    /* --- 状态框内容 --- */
-    const connLeft = channel.connected
-      ? `${theme.fg("success", "●")} 已连接  ${theme.bold(channel.deviceName)}`
-      : `${theme.fg("warning", "○")} 未连接  ${theme.fg("muted", "LED 心跳待命")}`;
-    const connRight = channel.connected
-      ? theme.fg(rssi === null ? "muted" : rssi >= -75 ? "success" : "warning", rssiText(rssi))
-      : theme.fg("dim", "— dBm");
-
-    const sessionLeft = status.busy
-      ? `${theme.fg("accent", "◐")} agent 运行中`
-      : `${theme.fg("muted", "◯")} agent 空闲`;
-    const sessionRight = status.scrollAvailable
-      ? theme.fg("muted", "旋钮滚动可用")
-      : theme.fg("dim", "旋钮滚动不可用");
-
     /* --- 菜单项 --- */
     const items: SelectItem[] = [
       { value: "bind", label: "扫描 / 绑定设备", description: "发现附近设备, 按信号强度排序" },
@@ -201,6 +185,23 @@ function mainMenu(
     const render = (width: number): string[] => {
       if (cachedLines && cachedWidth === width) return cachedLines;
       const w = Math.max(20, width);
+      const inner = Math.max(1, w - 4);
+
+      /* 状态行每帧实时读取: 连接成功后后台重连可立即反映到面板 */
+      const status = getStatus();
+      const rssi = channel.rssi;
+      const connLeft = channel.connected
+        ? `${theme.fg("success", "●")} 已连接  ${theme.bold(channel.deviceName)}`
+        : `${theme.fg("warning", "○")} 未连接  ${theme.fg("muted", "LED 心跳待命")}`;
+      const connRight = channel.connected
+        ? theme.fg(rssi === null ? "muted" : rssi >= -75 ? "success" : "warning", rssiText(rssi))
+        : theme.fg("dim", "后台重连中 ...");
+      const sessionLeft = status.busy
+        ? `${theme.fg("accent", "◐")} agent 运行中`
+        : `${theme.fg("muted", "◯")} agent 空闲`;
+      const sessionRight = status.scrollAvailable
+        ? theme.fg("muted", "旋钮滚动可用")
+        : theme.fg("dim", "旋钮滚动不可用");
 
       const title = spread(
         theme.bold(theme.fg("accent", "AgentDock")) + theme.fg("muted", " 管理面板"),
@@ -223,7 +224,10 @@ function mainMenu(
         title,
         "",
         ...boxed(
-          [spread(connLeft, connRight, Math.max(1, w - 4)), spread(sessionLeft, sessionRight, Math.max(1, w - 4))],
+          [
+            spread(connLeft, connRight, inner),
+            spread(sessionLeft, sessionRight, inner),
+          ],
           w,
           (s) => theme.fg("border", s),
         ),
@@ -238,6 +242,16 @@ function mainMenu(
       return cachedLines;
     };
 
+    /* 连接状态变化 (后台重连成功/断开) → 刷新 RSSI 并重绘面板,
+     * 否则面板会停在打开时的快照上, 只有底部状态栏在变 */
+    const unsubscribe = channel.onConnectionChange((connected) => {
+      const refresh = connected ? channel.refreshRssi() : Promise.resolve(null);
+      void refresh.then(() => {
+        invalidate();
+        tui.requestRender();
+      });
+    });
+
     return {
       render,
       invalidate,
@@ -246,6 +260,7 @@ function mainMenu(
         invalidate(); // 选中项可能已变 → 丢弃合成缓存, 否则箭头不动
         tui.requestRender();
       },
+      dispose: () => unsubscribe(),
     };
   });
 }

@@ -42,6 +42,7 @@ export class DeckChannel {
   private disposed = false;
   private connecting = false;
   private lastRssi: number | null = null;
+  private connListeners = new Set<(connected: boolean) => void>();
 
   constructor(private onEvent: (msg: any) => void, private onConnection: (connected: boolean) => void, log: Log = (...a) => console.log(...a)) {
     this.log = log;
@@ -58,6 +59,25 @@ export class DeckChannel {
   /** 缓存的信号强度 (连接时记录, refreshRssi 更新) */
   get rssi(): number | null {
     return this.lastRssi;
+  }
+
+  /** 订阅连接状态变化 (面板等 UI 用); 返回退订函数 */
+  onConnectionChange(cb: (connected: boolean) => void): () => void {
+    this.connListeners.add(cb);
+    return () => {
+      this.connListeners.delete(cb);
+    };
+  }
+
+  private emitConnection(connected: boolean): void {
+    this.onConnection(connected);
+    for (const cb of this.connListeners) {
+      try {
+        cb(connected);
+      } catch {
+        /* 监听器异常不影响连接流程 */
+      }
+    }
   }
 
   /** 主动读取已连接设备的 RSSI; 失败/超时返回缓存值 (无缓存 = null) */
@@ -142,7 +162,7 @@ export class DeckChannel {
         if (this.disposed) return;
         this.log("设备断开");
         this.disposeLink();
-        this.onConnection(false);
+        this.emitConnection(false);
       });
 
       this.log("发现服务/特征 ...");
@@ -169,7 +189,7 @@ export class DeckChannel {
       });
       await this.eventChar.subscribeAsync();
       this.log(`已连接 ${target.name}`);
-      this.onConnection(true);
+      this.emitConnection(true);
       return "ok";
     } catch (e) {
       this.log("连接异常:", e instanceof Error ? e.message : e);
