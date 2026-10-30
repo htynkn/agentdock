@@ -1,0 +1,30 @@
+pi-plugin/package.json
+  s_d04ed1058ef39f::t_38754ac0dcd99a 5-26,30-43,48-61,68,72-74
+pi-plugin/README.md
+  s_d04ed1058ef39f::t_90be9c78ca05a6 21-22,24,27-28,30-34,42,45,117-119,123-126
+  s_d04ed1058ef39f::t_95ef7cddc94284 120-122
+.gitignore
+  s_d04ed1058ef39f::t_beb1f0b491f1f1 76-78
+pi-plugin/PUBLISHING.md
+  s_d04ed1058ef39f::t_95ee6a6b9b9196 1-151
+pi-plugin/LICENSE
+  s_d04ed1058ef39f::t_73a39e2ccf40d7 1-21
+pi-plugin/package-lock.json
+  s_d04ed1058ef39f::t_80a428644ff6c4 10,16,23-34
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d60d5b4d08befca3f69b874a1ef720bf791a4e5b",
+  "prompts": {},
+  "sessions": {
+    "s_d04ed1058ef39f": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a18cc5-00f2-7062-a1f8-145d1d938c2d",
+        "model": "deepseek-v4.1-flash"
+      },
+      "human_author": "htynkn <htynkn@gmail.com>"
+    }
+  }
+}
