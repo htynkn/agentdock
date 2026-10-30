@@ -18,14 +18,20 @@ the extension scans.
 
 ## Install
 
+Install it as a pi package:
+
 ```bash
-npm install
+pi install npm:agentdock-pi-plugin
 ```
 
-`@stoprocent/noble` is a native BLE binding. On Linux you may need the Bluetooth
-headers first (for example `libbluetooth-dev` on Debian/Ubuntu).
+To pin a version: `pi install npm:agentdock-pi-plugin@0.1.0`. Project scope:
+add `-l`. Remove with `pi remove npm:agentdock-pi-plugin`.
 
-## Load
+`@stoprocent/noble` is a native BLE binding installed as a dependency. On Linux
+you may need the Bluetooth headers first (for example `libbluetooth-dev` on
+Debian/Ubuntu).
+
+## Load without installing
 
 During development:
 
@@ -33,12 +39,10 @@ During development:
 pi --extension /absolute/path/to/agentdock/pi-plugin/index.ts
 ```
 
-For everyday use, copy the directory including `node_modules` to the pi
-extensions directory:
+Or try the npm tarball for a single invocation:
 
 ```bash
-mkdir -p ~/.pi/agent/extensions
-cp -R . ~/.pi/agent/extensions/agentdock
+pi -e npm:agentdock-pi-plugin
 ```
 
 ## Usage
@@ -110,6 +114,16 @@ The extension talks to `firmware/main/deck.c` over a custom GATT service:
 npm install
 npm run typecheck   # tsc --noEmit
 npm test            # vitest: 纯逻辑 + /dock 面板渲染与交互
+npm run check:pack  # 校验 npm tarball 内容 (入口齐全、无测试泄漏)
+```
+
+Publishing is described in
+[PUBLISHING.md](https://github.com/htynkn/agentdock/blob/master/pi-plugin/PUBLISHING.md),
+or in short:
+
+```bash
+npm version patch
+npm publish --registry https://registry.npmjs.com/
 ```
 
 单测不依赖真实蓝牙硬件: BLE 通道与 pi 的 `ctx.ui` 都是 mock 的,

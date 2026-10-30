@@ -1,25 +1,77 @@
 {
   "name": "agentdock-pi-plugin",
   "version": "0.1.0",
-  "private": true,
-  "type": "module",
   "description": "AgentDock BLE hardware controller bridge for the pi coding agent",
+  "type": "module",
+  "license": "MIT",
+  "author": "htynkn",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/htynkn/agentdock.git",
+    "directory": "pi-plugin"
+  },
+  "homepage": "https://github.com/htynkn/agentdock/tree/master/pi-plugin#readme",
+  "bugs": {
+    "url": "https://github.com/htynkn/agentdock/issues"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-coding-agent",
+    "agentdock",
+    "ble",
+    "bluetooth",
+    "esp32",
+    "hardware"
+  ],
   "engines": {
     "node": ">=22"
+  },
+  "files": [
+    "index.ts",
+    "ble.ts",
+    "panel.ts",
+    "config.ts",
+    "scroll.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "scan": "node scan-test.mjs"
+    "scan": "node scan-test.mjs",
+    "check:pack": "node scripts/check-pack.mjs",
+    "prepublishOnly": "npm run typecheck && npm test && npm run check:pack"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-coding-agent": {
+      "optional": true
+    },
+    "@earendil-works/pi-tui": {
+      "optional": true
+    }
   },
   "dependencies": {
     "@stoprocent/noble": "^1.9.4"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^1.4.0",
+    "@earendil-works/pi-tui": "^1.4.0",
     "@types/node": "^26.6.5",
     "typescript": "^7.0.2",
     "vitest": "^5.0.5"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

@@ -73,3 +73,6 @@ promo/.python-version
 *.log
 tmp/
 *.tmp
+
+# npm pack output
+*.tgz
