@@ -87,18 +87,15 @@ git push origin pi-plugin-v0.1.0
 ```bash
 cd pi-plugin
 # move the Unreleased entries in CHANGELOG.md under a new version heading,
-# then bump and publish
+# then bump, publish and push the tag
 npm version patch|minor|major
 npm publish --registry https://registry.npmjs.com/ --otp=<code>
 git push --follow-tags
 ```
 
-`npm version` rewrites `version` and creates a `vX.Y.Z` git tag; rename it to the
-`pi-plugin-vX.Y.Z` form the release workflow expects:
-
-```bash
-git tag -d v0.1.1 && git tag pi-plugin-v0.1.1
-```
+`pi-plugin/.npmrc` sets `tag-version-prefix=pi-plugin-v`, so `npm version`
+creates `pi-plugin-vX.Y.Z` — the tag form the release workflow publishes on —
+and `npm publish` uploads the same version. No manual tag renaming needed.
 
 Semantic versioning: bump `minor` for extension API changes or new runtime
 dependencies, `major` for protocol or configuration breakage. Before 1.0 a
@@ -126,9 +123,23 @@ Day-to-day flow:
 ```bash
 cd pi-plugin
 npm version minor
-git tag -d v0.2.0 && git tag pi-plugin-v0.2.0
-git push --follow-tags
+git push --follow-tags   # the pi-plugin-v* tag triggers the publish
 ```
+
+### Why the `pi-plugin-v` prefix
+
+This repository versioned several things independently (firmware, hardware
+revisions, the `promo` package). A bare `v0.1.1` tag does not say which of them
+it belongs to, and the workflow would have to publish on *any* tag — including
+firmware-only releases. The per-package prefix keeps `pi-plugin-v*` unambiguous,
+and `pi-plugin/.npmrc` makes `npm version` produce it automatically, so it costs
+nothing in practice.
+
+To publish on plain `v*` tags instead, change the `on.push.tags` filter in
+`.github/workflows/release-pi-plugin.yml` to `v*` and remove
+`tag-version-prefix` from `pi-plugin/.npmrc`. The existing tag/version equality
+check then keeps a firmware tag from publishing the wrong version — it fails the
+job rather than uploading, but it does fail red on unrelated releases.
 
 ## 6. Troubleshooting
 
