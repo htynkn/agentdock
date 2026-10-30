@@ -82,20 +82,30 @@ git tag pi-plugin-v0.1.0
 git push origin pi-plugin-v0.1.0
 ```
 
-## 4. Subsequent releases
+## 4. Subsequent releases: push a tag
+
+After 0.1.0 exists on npm and the Trusted Publisher is configured (see
+section 5), releasing is one action:
 
 ```bash
-cd pi-plugin
-# move the Unreleased entries in CHANGELOG.md under a new version heading,
-# then bump, publish and push the tag
-npm version patch|minor|major
-npm publish --registry https://registry.npmjs.com/ --otp=<code>
-git push --follow-tags
+git tag pi-plugin-v0.1.1
+git push origin pi-plugin-v0.1.1
 ```
 
-`pi-plugin/.npmrc` sets `tag-version-prefix=pi-plugin-v`, so `npm version`
-creates `pi-plugin-vX.Y.Z` — the tag form the release workflow publishes on —
-and `npm publish` uploads the same version. No manual tag renaming needed.
+That is it. The workflow derives the version from the tag, writes it into
+`package.json`, runs `typecheck` + `test` + `check:pack`, and publishes with
+provenance. No local `npm version`, no `npm publish`, no OTP.
+
+Before tagging, move the `Unreleased` entries in `CHANGELOG.md` under the new
+version heading and commit that on `master`.
+
+A prerelease tag such as `pi-plugin-v0.2.0-beta.1` is published under the `next`
+dist-tag, so `pi install npm:agentdock-pi-plugin` keeps resolving to `latest`
+until a stable version is tagged.
+
+`npm version patch|minor|major` still works if you prefer it: `pi-plugin/.npmrc`
+sets `tag-version-prefix=pi-plugin-v`, so it creates the same tag form and
+`git push --follow-tags` releases it.
 
 Semantic versioning: bump `minor` for extension API changes or new runtime
 dependencies, `major` for protocol or configuration breakage. Before 1.0 a
@@ -104,42 +114,33 @@ the release notes.
 
 ## 5. Automated releases (Trusted Publishing)
 
-`.github/workflows/release-pi-plugin.yml` publishes on every `pi-plugin-v*` tag.
-It authenticates through npm Trusted Publishing (OIDC), so no `NPM_TOKEN` secret
-is stored, and npm attaches a provenance statement automatically.
+`.github/workflows/release-pi-plugin.yml` publishes on every `pi-plugin-v*` tag
+(and on manual `workflow_dispatch`, which publishes the version already in
+`package.json`). It authenticates through npm Trusted Publishing (OIDC), so
+there is no `NPM_TOKEN` secret and no OTP, and npm attaches a provenance
+statement automatically.
 
-One-time setup:
+One-time setup — **after the first manual publish**, because npm only offers
+Trusted Publisher settings for packages that already exist:
 
 1. npm package page → **Settings → Trusted Publisher → GitHub Actions**
 2. Repository: `htynkn/agentdock`, workflow filename: `release-pi-plugin.yml`,
    environment: leave empty.
 
-The workflow verifies that the tag matches `package.json`, then runs
-`typecheck`, `test`, `check:pack` and `npm publish --provenance`. It needs npm CLI
->= 11.5.1 (`npm install --global npm@11` in the job) and Node >= 22.14.
-
-Day-to-day flow:
-
-```bash
-cd pi-plugin
-npm version minor
-git push --follow-tags   # the pi-plugin-v* tag triggers the publish
-```
+The job needs npm CLI >= 11.5.1 (`npm install --global npm@11`) and Node >= 22.14.
+Until the Trusted Publisher is set up, tag-triggered runs fail at the publish
+step.
 
 ### Why the `pi-plugin-v` prefix
 
-This repository versioned several things independently (firmware, hardware
+This repository versions several things independently (firmware, hardware
 revisions, the `promo` package). A bare `v0.1.1` tag does not say which of them
-it belongs to, and the workflow would have to publish on *any* tag — including
-firmware-only releases. The per-package prefix keeps `pi-plugin-v*` unambiguous,
-and `pi-plugin/.npmrc` makes `npm version` produce it automatically, so it costs
-nothing in practice.
+it belongs to, and with `v*` every firmware or hardware tag would trigger an npm
+publish of the plugin — either a red run or, worse, a version nobody intended.
 
-To publish on plain `v*` tags instead, change the `on.push.tags` filter in
-`.github/workflows/release-pi-plugin.yml` to `v*` and remove
-`tag-version-prefix` from `pi-plugin/.npmrc`. The existing tag/version equality
-check then keeps a firmware tag from publishing the wrong version — it fails the
-job rather than uploading, but it does fail red on unrelated releases.
+To publish on plain `v*` tags anyway, change the `on.push.tags` filter to `v*`
+and drop `tag-version-prefix` from `pi-plugin/.npmrc`. Only do that if the whole
+repository shares one release cadence.
 
 ## 6. Troubleshooting
 
@@ -152,4 +153,6 @@ job rather than uploading, but it does fail red on unrelated releases.
 | noble install fails on Linux | Missing Bluetooth headers: `sudo apt install libbluetooth-dev` (Debian/Ubuntu) |
 | `@earendil-works/pi-tui` fails to resolve | Never put it in `dependencies`; the host maps it. A physical copy creates duplicate instances and triggers a pi warning |
 | `pi install` succeeds but no extension loads | Check `pi.extensions` is `./index.ts` and the file is in the tarball (`npm run check:pack`) |
-| Release workflow fails with `E404` / OIDC error | Trusted Publisher not configured, or the workflow filename does not match the npm settings |
+| Release workflow fails with `E404` / OIDC error | Trusted Publisher not configured yet (it can only be added after the first manual publish), or the workflow filename does not match the npm settings |
+| Tag-triggered run published the wrong version | Fixed by design: the workflow overwrites `package.json`'s version with the tag's. Check the "Resolve version from tag" step output |
+| `E403 You cannot publish over the previously published versions` | That tag's version already exists on npm; use a new tag |

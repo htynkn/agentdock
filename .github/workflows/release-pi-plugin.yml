@@ -1,7 +1,11 @@
 name: Release pi-plugin
 
-# Publishes on tags like pi-plugin-v0.1.0: verify, test, then publish to public npm.
-# Authentication uses npm Trusted Publishing (OIDC) — no NPM_TOKEN secret needed:
+# Push a tag like pi-plugin-v0.1.1 and this publishes that exact version to npm.
+# The tag is the source of truth: the workflow sets package.json's version from
+# it, so no local `npm version` step is needed.
+#
+# Authentication uses npm Trusted Publishing (OIDC) — no NPM_TOKEN secret and no
+# OTP. One-time setup, after the first manual publish:
 #   npm package page → Settings → Trusted Publisher → GitHub Actions
 #   Organization or user: htynkn / Repository: agentdock
 #   Workflow filename: release-pi-plugin.yml
@@ -11,7 +15,7 @@ on:
   push:
     tags:
       - "pi-plugin-v*"
-  workflow_dispatch:
+  workflow_dispatch: # manual run publishes the version already in package.json
 
 permissions:
   contents: read
@@ -49,16 +53,23 @@ jobs:
       - name: Install dependencies
         run: npm ci --ignore-scripts --no-audit --no-fund
 
-      - name: Verify tag matches package version
+      - name: Resolve version from tag
         if: startsWith(github.ref, 'refs/tags/')
         run: |
-          version="$(node -p 'require("./package.json").version')"
-          expected="pi-plugin-v${version}"
-          if [ "$GITHUB_REF_NAME" != "$expected" ]; then
-            echo "::error::tag $GITHUB_REF_NAME does not match package.json version, expected $expected"
+          version="${GITHUB_REF_NAME#pi-plugin-v}"
+          if ! node -e '
+            const semver = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$/;
+            process.exit(semver.test(process.argv[1]) ? 0 : 1);
+          ' "$version"; then
+            echo "::error::tag $GITHUB_REF_NAME does not carry a semver version"
             exit 1
           fi
-          echo "publishing $expected"
+          current="$(node -p 'require("./package.json").version')"
+          if [ "$current" != "$version" ]; then
+            echo "package.json has $current, tag says $version — publishing $version"
+            npm version "$version" --no-git-tag-version --allow-same-version
+          fi
+          echo "releasing ${GITHUB_REF_NAME} as version $(node -p 'require("./package.json").version')"
 
       - name: Typecheck
         run: npm run typecheck
@@ -70,6 +81,14 @@ jobs:
         run: npm run check:pack
 
       - name: Publish
-        # With Trusted Publishing npm generates provenance automatically and
-        # NODE_AUTH_TOKEN is not required.
-        run: npm publish --provenance --access public
+        # --ignore-scripts: the checks above already ran; prepublishOnly would repeat them.
+        # With Trusted Publishing npm attaches provenance automatically.
+        # Prereleases (1.2.3-beta.1) go to the `next` dist-tag instead of `latest`.
+        run: |
+          version="$(node -p 'require("./package.json").version')"
+          case "$version" in
+            *-*) dist_tag="next" ;;
+            *) dist_tag="latest" ;;
+          esac
+          echo "publishing $version with dist-tag $dist_tag"
+          npm publish --ignore-scripts --provenance --access public --tag "$dist_tag"
