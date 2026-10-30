@@ -114,7 +114,7 @@ The extension talks to `firmware/main/deck.c` over a custom GATT service:
 npm install
 npm run typecheck   # tsc --noEmit
 npm test            # vitest: 纯逻辑 + /dock 面板渲染与交互
-npm pack --dry-run  # 查看将要发布的文件
+npm run check:pack  # 校验 npm tarball 内容 (入口齐全、无测试泄漏)
 ```
 
 Publishing is described in

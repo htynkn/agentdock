@@ -103,3 +103,7 @@ jobs:
       # 单测: 纯逻辑 + TUI 渲染/交互 (mock theme 与 channel, 不需要真实蓝牙)
       - name: Unit tests
         run: npm test
+
+      # Guards against a files whitelist that drops the entry point or leaks dev files
+      - name: Check tarball contents
+        run: npm run check:pack

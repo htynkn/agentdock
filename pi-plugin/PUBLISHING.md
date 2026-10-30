@@ -1,151 +1,144 @@
-# 发布到 npm
+# Publishing to npm
 
-`pi-plugin` 以源码形式发布：pi 用 jiti 直接加载 TypeScript，所以不需要构建步骤，
-`npm publish` 就是发布 tarball。
+`pi-plugin` is published as source: pi loads the TypeScript through jiti, so
+there is no build step and `npm publish` ships the tarball as is.
 
-## 一、发布前需要准备的东西
+## 1. Prerequisites
 
-1. **npm 账号**（免费）：<https://www.npmjs.com/signup>
-   包名 `agentdock-pi-plugin` 在公共 registry 上查询结果为 404，可用。
-2. **2FA**：npm 现在强制要求发布者开启 two-factor auth（推荐 authenticator app，
-   发布时输入 6 位 OTP）。
-3. **确认 Example 用的 registry**。本机当前配置是美团内网源：
+1. **An npm account**: <https://www.npmjs.com/signup>. The name
+   `agentdock-pi-plugin` returns 404 on the public registry, so it is available.
+2. **Two-factor auth**: npm requires it for publishing. Use an authenticator app
+   and pass the 6-digit code with `--otp` when publishing.
+3. **The right registry.** The default on this machine points at an internal mirror:
 
    ```bash
    npm config get registry
    # http://r.npm.sankuai.com
    ```
 
-   往内网源发布是没人能通过 `pi install npm:agentdock-pi-plugin` 装到的。
-   两种做法任选其一：
+   Publishing there would make the package unreachable for
+   `pi install npm:agentdock-pi-plugin`. Either pass
+   `--registry https://registry.npmjs.com/` explicitly on every command, or bind
+   a scope to the public registry once (`npm config set @htynkn:registry
+   https://registry.npmjs.com/`). The package name has no scope, so it cannot be
+   routed per package — always pass `--registry` when publishing by hand.
 
-   - 每条命令显式加 `--registry https://registry.npmjs.com/`；
-   - 或者给该包单独指定 registry（推荐，一次配置长期有效）：
+   `package-lock.json` already resolves against the public registry (the
+   "Check lockfile registry" CI step enforces this), so no lockfile change is
+   needed.
 
-     ```bash
-     npm config set @htynkn:registry https://registry.npmjs.com/   # scoped 包
-     # 非 scoped 包无法按包名单独路由，建议发布时始终带 --registry 参数
-     ```
+## 2. What the repository already sets up
 
-   `package-lock.json` 里的 `resolved` 已经是公共源（CI 里的
-   "Check lockfile registry" 步骤会强制校验），所以发布前不用改 lockfile。
+`pi-plugin/package.json` carries everything publishing needs:
 
-## 二、已在仓库中做好的准备
-
-`pi-plugin/package.json` 现在包含发布所需的全部字段：
-
-| 字段 | 作用 |
+| Field | Purpose |
 | --- | --- |
-| `private` 已删除 | 否则 npm 拒绝发布 |
-| `files` | 只发 `index.ts / ble.ts / panel.ts / config.ts / scroll.ts / README.md / LICENSE`（约 15 kB，不含测试与 tsconfig） |
-| `pi.extensions: ["./index.ts"]` | pi 包清单，安装后自动加载该扩展 |
-| `keywords: ["pi-package", ...]` | 进入 <https://pi.dev/packages> 画廊发现列表 |
-| `peerDependencies` + `peerDependenciesMeta.optional` | `@earendil-works/pi-coding-agent`、`@earendil-works/pi-tui` 由 pi 宿主提供（声明为 `"*"`，不得放进 `dependencies`，否则会被 pi 告警） |
-| `dependencies: {"@stoprocent/noble"}` | 真实运行时依赖（native BLE 绑定），随包安装 |
-| `repository.directory: "pi-plugin"` | monorepo 子目录，npm 页面能正确链接到源码 |
-| `license` + `LICENSE` | MIT，从仓库根目录复制 |
-| `publishConfig.access: public` | 防止误发成私有 |
-| `prepublishOnly` | 发布前自动跑 `typecheck` + `test`，失败即中止 |
+| `private` removed | npm refuses to publish otherwise |
+| `files` | Ships only `index.ts / ble.ts / panel.ts / config.ts / scroll.ts / README.md / LICENSE` (~15 kB, no tests, no tsconfig) |
+| `pi.extensions: ["./index.ts"]` | pi package manifest; the extension loads automatically after install |
+| `keywords: ["pi-package", ...]` | Makes the package discoverable in the <https://pi.dev/packages> gallery |
+| `peerDependencies` + `peerDependenciesMeta.optional` | `@earendil-works/pi-coding-agent` and `@earendil-works/pi-tui` are supplied by the pi host. Declared with `"*"`; must not live in `dependencies`, or pi warns about duplicate runtime modules |
+| `dependencies: {"@stoprocent/noble"}` | Real runtime dependency (native BLE binding), installed with the package |
+| `repository.directory: "pi-plugin"` | Correct source link from the npm page in this monorepo |
+| `license` + `LICENSE` | MIT |
+| `publishConfig.access: public` | Guards against publishing as private |
+| `prepublishOnly` | Runs `typecheck` + `test` + `check:pack` before publishing and aborts on failure |
 
-## 三、首次发布
+`npm run check:pack` (`scripts/check-pack.mjs`) inspects `npm pack --dry-run
+--json` and fails if a required file is missing or a development file leaks into
+the tarball.
+
+## 3. First release
 
 ```bash
-# 1. 登录公共 registry（会提示输入 OTP）
+# 1. Log in to the public registry (prompts for a one-time password)
 npm login --registry https://registry.npmjs.com/
 npm whoami --registry https://registry.npmjs.com/
 
-# 2. 本地自检：类型检查 + 45 个单测 + 打包清单
+# 2. Local self-check: types + 45 unit tests + tarball contents
 cd pi-plugin
 npm ci --ignore-scripts
-npm run typecheck && npm test
-npm pack --dry-run --registry https://registry.npmjs.com/
+npm run typecheck && npm test && npm run check:pack
 
-# 3. 发布
-npm publish --registry https://registry.npmjs.com/ --otp=<6位验证码>
+# 3. Publish
+npm publish --registry https://registry.npmjs.com/ --otp=<6-digit code>
 
-# 4. 验证
+# 4. Verify
 npm view agentdock-pi-plugin version --registry https://registry.npmjs.com/
 ```
 
-发布成功后，任何人都可以：
+After that, anyone can install it:
 
 ```bash
-pi install npm:agentdock-pi-plugin        # 个人 scope（~/.pi/agent/settings.json）
-pi install -l npm:agentdock-pi-plugin     # 项目 scope（.pi/settings.json）
-pi -e npm:agentdock-pi-plugin             # 单次试用，不写入 settings
+pi install npm:agentdock-pi-plugin        # personal scope (~/.pi/agent/settings.json)
+pi install -l npm:agentdock-pi-plugin     # project scope (.pi/settings.json)
+pi -e npm:agentdock-pi-plugin             # one-off trial, nothing written to settings
 ```
 
-打 tag 记录这次发布：
+Record the release with a tag:
 
 ```bash
 git tag pi-plugin-v0.1.0
 git push origin pi-plugin-v0.1.0
 ```
 
-## 四、后续版本
+## 4. Subsequent releases
 
 ```bash
 cd pi-plugin
-npm run typecheck && npm test
-npm version patch|minor|major   # 自动改 version 并打 git tag（package scope 下 tag 为 v0.1.1）
+# move the Unreleased entries in CHANGELOG.md under a new version heading,
+# then bump and publish
+npm version patch|minor|major
 npm publish --registry https://registry.npmjs.com/ --otp=<code>
 git push --follow-tags
 ```
 
-语义化建议：pi 扩展 API 变动或需要重新装依赖时升 `minor`，协议/配置不兼容时升
-`major`（1.0 之前可以在 `minor` 里做破坏性变更，但要在 CHANGELOG/Release notes 写清楚）。
+`npm version` rewrites `version` and creates a `vX.Y.Z` git tag; rename it to the
+`pi-plugin-vX.Y.Z` form the release workflow expects:
 
-## 五、可选：用 GitHub Actions 自动发布（recommended）
-
-用 npm 的 Trusted Publishing（OIDC，无需保存 token，自动附带 provenance 证明）：
-
-1. npm 包页面 → **Settings → Trusted Publisher → GitHub Actions**，填
-   `htynkn/agentdock`、workflow 文件名 `release-pi-plugin.yml`、environment 留空。
-2. 添加 `.github/workflows/release-pi-plugin.yml`：
-
-```yaml
-name: Release pi-plugin
-
-on:
-  push:
-    tags: ["pi-plugin-v*"]
-
-permissions:
-  contents: read
-  id-token: write # Trusted Publishing 必需
-
-jobs:
-  publish:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: pi-plugin
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          registry-url: https://registry.npmjs.com
-          cache: npm
-          cache-dependency-path: pi-plugin/package-lock.json
-      - run: npm install --global npm@11
-      - run: npm ci --ignore-scripts --no-audit --no-fund
-      - run: npm run typecheck && npm test
-      - run: npm publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }} # Trusted Publishing 时可删除
+```bash
+git tag -d v0.1.1 && git tag pi-plugin-v0.1.1
 ```
 
-标签发布流程就变成：`git tag pi-plugin-v0.1.1 && git push origin pi-plugin-v0.1.1`。
+Semantic versioning: bump `minor` for extension API changes or new runtime
+dependencies, `major` for protocol or configuration breakage. Before 1.0 a
+breaking change may land in a `minor` release, but say so in `CHANGELOG.md` and
+the release notes.
 
-## 六、常见问题
+## 5. Automated releases (Trusted Publishing)
 
-| 现象 | 原因 / 处理 |
+`.github/workflows/release-pi-plugin.yml` publishes on every `pi-plugin-v*` tag.
+It authenticates through npm Trusted Publishing (OIDC), so no `NPM_TOKEN` secret
+is stored, and npm attaches a provenance statement automatically.
+
+One-time setup:
+
+1. npm package page → **Settings → Trusted Publisher → GitHub Actions**
+2. Repository: `htynkn/agentdock`, workflow filename: `release-pi-plugin.yml`,
+   environment: leave empty.
+
+The workflow verifies that the tag matches `package.json`, then runs
+`typecheck`, `test`, `check:pack` and `npm publish --provenance`. It needs npm CLI
+>= 11.5.1 (`npm install --global npm@11` in the job) and Node >= 22.14.
+
+Day-to-day flow:
+
+```bash
+cd pi-plugin
+npm version minor
+git tag -d v0.2.0 && git tag pi-plugin-v0.2.0
+git push --follow-tags
+```
+
+## 6. Troubleshooting
+
+| Symptom | Cause / fix |
 | --- | --- |
-| `403 You do not have permission to publish` | 包名被占用，或没登录到公共 registry（检查 `npm config get registry`） |
-| `402 Payment Required` | 试图发布成私有 scope 包，`publishConfig.access` 已设为 `public` |
-| `EOTP` / `one-time password required` | 加 `--otp=<code>` |
-| 用户安装后 BLE 报错 `Cannot find module '@stoprocent/noble'` | 安装时跳过了构建脚本（如 `--ignore-scripts`）；让用户在 `pi install` 前直接用 `npm rebuild @stoprocent/noble` 重装该 native 依赖 |
-| Linux 上安装 noble 失败 | 缺蓝牙头文件：`sudo apt install libbluetooth-dev`（Debian/Ubuntu） |
-| 读不到 `@earendil-works/pi-tui` | 一定不要把它写进 `dependencies`；宿主会做模块映射，写进 `dependencies` 会产生重复实例并触发 pi 告警 |
-| 发布后 `pi install` 找不到扩展 | 检查 `pi.extensions` 路径是否为 `./index.ts`，以及 `files` 是否把该文件打进去（`npm pack --dry-run` 可验证） |
+| `403 You do not have permission to publish` | Name taken, or logged in to the wrong registry (`npm config get registry`) |
+| `402 Payment Required` | Trying to publish a private package; `publishConfig.access` is already `public` |
+| `EOTP` / `one-time password required` | Pass `--otp=<code>` |
+| `Cannot find module '@stoprocent/noble'` after install | The native build was skipped (e.g. `--ignore-scripts`); run `npm rebuild @stoprocent/noble` |
+| noble install fails on Linux | Missing Bluetooth headers: `sudo apt install libbluetooth-dev` (Debian/Ubuntu) |
+| `@earendil-works/pi-tui` fails to resolve | Never put it in `dependencies`; the host maps it. A physical copy creates duplicate instances and triggers a pi warning |
+| `pi install` succeeds but no extension loads | Check `pi.extensions` is `./index.ts` and the file is in the tarball (`npm run check:pack`) |
+| Release workflow fails with `E404` / OIDC error | Trusted Publisher not configured, or the workflow filename does not match the npm settings |

@@ -46,7 +46,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "scan": "node scan-test.mjs",
-    "prepublishOnly": "npm run typecheck && npm test"
+    "check:pack": "node scripts/check-pack.mjs",
+    "prepublishOnly": "npm run typecheck && npm test && npm run check:pack"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
