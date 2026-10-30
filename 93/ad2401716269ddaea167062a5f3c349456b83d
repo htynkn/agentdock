@@ -1,0 +1,25 @@
+pi-plugin/PUBLISHING.md
+  s_d04ed1058ef39f::t_04954aa20ad661 102-105
+  s_d04ed1058ef39f::t_0729841d7e8e71 85-88,91-92,95-100,106-108,117-121,123-124,130-132,136,138-139,141-143,156-158
+  s_d04ed1058ef39f::t_35e4d3b721cfa0 101
+.github/workflows/release-pi-plugin.yml
+  s_d04ed1058ef39f::t_0d676c22561b8e 60-64
+  s_d04ed1058ef39f::t_c7a4f1bf58b9f0 86-94
+  s_d04ed1058ef39f::t_4303b076f9671e 3-8,18,56,59,67-72,84-85
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "93ad2401716269ddaea167062a5f3c349456b83d",
+  "prompts": {},
+  "sessions": {
+    "s_d04ed1058ef39f": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a18cc5-00f2-7062-a1f8-145d1d938c2d",
+        "model": "deepseek-v4.1-flash"
+      },
+      "human_author": "htynkn <htynkn@gmail.com>"
+    }
+  }
+}
