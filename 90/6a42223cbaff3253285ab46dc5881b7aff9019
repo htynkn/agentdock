@@ -1,0 +1,22 @@
+pi-plugin/PUBLISHING.md
+  s_d04ed1058ef39f::t_318ff95668b918 90,96-98,126,129-142
+  s_d04ed1058ef39f::t_fefa35b5c49143 143
+pi-plugin/.npmrc
+  s_d04ed1058ef39f::t_f25b4d51726bf6 1-5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "906a42223cbaff3253285ab46dc5881b7aff9019",
+  "prompts": {},
+  "sessions": {
+    "s_d04ed1058ef39f": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a18cc5-00f2-7062-a1f8-145d1d938c2d",
+        "model": "deepseek-v4.1-flash"
+      },
+      "human_author": "htynkn <htynkn@gmail.com>"
+    }
+  }
+}
