@@ -20,6 +20,8 @@ hardware/
 │   │                        + tolerance-budget self-checks
 │   ├── render.py            matplotlib preview renders (6 views)
 │   ├── panel_drawing.py     dimensioned drawing of the acrylic panel (ordering)
+│   ├── panel_print.py       panel print artwork (front + mirrored back PDF/SVG)
+│   │                        with an automatic ink-clearance check
 │   ├── PANEL.md             panel ordering guide (JLC panel): file, parameters,
 │   │                        dimensions, red lines, silkscreen notes
 │   ├── thickness_check.py   STL wall-thickness probe (ray casting) — reproduces
@@ -135,6 +137,24 @@ before submitting it. The full ordering guide — what to upload, which JLC
 parameters to pick, the dimension table and the three things that must not
 change — lives in **[enclosure/PANEL.md](enclosure/PANEL.md)**.
 
+#### Panel print artwork ("orrery" theme)
+
+`uv run panel_print.py` draws the print layer as a 1:1 vector file: near-black
+flood + emerald green + matte gold linework, one single wordmark
+(`AgentDock`), **no text on the keys** — each key window gets three concentric
+ring arcs instead — a 24-tick astrolabe ring around the knob, and a `STATUS`
+ring around the light port. `Panel_print_front.pdf` is what a viewer sees;
+`Panel_print_back.pdf` is the same artwork mirrored for printing on the **back**
+of the acrylic (the durable option: ink sealed inside the 1.5 mm sheet).
+Stroke widths are 0.16–0.30 mm, and `panel_print.py` asserts every stroke keeps
+≥ 0.40 mm from the five cut-outs and from the panel outline, failing the build
+otherwise.
+
+The light port leaves an **unprinted** annulus (r 1.8–3.35) instead of ink: the
+1.5 mm acrylic plus the white-translucent Crown #513 tape diffuses the WS2812,
+so the ring around the port glows when the LED is on. Printing white or black
+over that annulus would block it.
+
 ### Fasteners (hidden, screws from the bottom)
 
 | Part | Spec | Qty |
@@ -214,10 +234,13 @@ uv run thickness_check.py output/Lid.stl --min 0.5   # locate thin walls
 uv run thickness_check.py output/Base.stl --min 0.5 --top 8
 uv run render.py            # PNG previews into render/
 uv run panel_drawing.py     # dimensioned panel drawing for the JLC order
+uv run panel_print.py       # print artwork: Panel_print_{front,back}.pdf/.svg
 ```
 
 Generated files: `Base.step/.stl`, `Lid.step/.stl`, `Panel.stl`,
-**`Panel.dxf`** (order the acrylic panel from this), `pcb_report.json`.
+**`Panel.dxf`** (order the acrylic panel from this),
+**`Panel_print_front.pdf/.svg` + `Panel_print_back.pdf/.svg`** (print artwork;
+the back file is pre-mirrored for reverse printing), `pcb_report.json`.
 
 `uv run enclosure.py` prints a self-check report and exits non-zero on any
 failure: outer dimensions, panel dimensions, single-solid check, exact boolean
@@ -292,4 +315,5 @@ git-ignored.
 push/PR touching `hardware/**`, runs the full self-check suite, renders the
 preview images and the assembly animation, and uploads a
 `agentdock-hardware-<run>` artifact containing the printable STL/STEP files, the
-panel DXF, the preview PNGs and `assembly.mp4` / `assembly.gif`.
+panel DXF, the panel print PDF/SVG (front + mirrored back), the preview PNGs and
+`assembly.mp4` / `assembly.gif`.

@@ -62,6 +62,9 @@ jobs:
       - name: Render previews
         run: uv run render.py
 
+      - name: Render panel print artwork
+        run: uv run panel_print.py
+
       - name: Render assembly animation
         run: uv run animate.py
 
@@ -88,6 +91,10 @@ jobs:
             hardware/enclosure/output/Lid.step
             hardware/enclosure/output/Panel.stl
             hardware/enclosure/output/Panel.dxf
+            hardware/enclosure/output/Panel_print_front.pdf
+            hardware/enclosure/output/Panel_print_front.svg
+            hardware/enclosure/output/Panel_print_back.pdf
+            hardware/enclosure/output/Panel_print_back.svg
             hardware/enclosure/render/*.png
             hardware/enclosure/render/assembly.mp4
             hardware/enclosure/render/assembly.gif

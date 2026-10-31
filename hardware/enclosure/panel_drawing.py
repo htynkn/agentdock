@@ -51,8 +51,8 @@ def setup_cjk() -> None:
             continue
 
 
-def main() -> None:
-    setup_cjk()
+def panel_layout() -> dict:
+    """面板几何（面板自身左下角为原点），panel_print.py 共用同一份推导。"""
     rep = json.loads((OUT / "pcb_report.json").read_text())
     bb = rep["board"]["bbox"]
     dx, dy = WALL + CLEAR - bb[0], WALL + CLEAR - bb[1]     # PCB 局部 → 外壳
@@ -63,7 +63,6 @@ def main() -> None:
     px0 = py0 = RIM_W + PANEL_GAP
     W = out_w - 2 * px0
     H = out_d - 2 * py0
-    R = out_w / 2 - 0  # 占位，下面用真实外圆角
     R = (rep["board"]["corner_radius"] + CLEAR + WALL) - RIM_W - PANEL_GAP
 
     kw = KEY_WIN + 2 * PANEL_KEY_PAD
@@ -74,6 +73,16 @@ def main() -> None:
     led_bb = rep["parts"]["led"]
     led = ((led_bb[0] + led_bb[3]) / 2 + dx - px0,
            (led_bb[1] + led_bb[4]) / 2 + LED_PORT_SHIFT + dy - py0)
+    return dict(W=W, H=H, R=R, key_win=kw, key_r=kr, keys=keys, knob=knob, led=led,
+                knob_d=PANEL_KNOB_CUT, led_d=PANEL_LED_CUT, rep=rep)
+
+
+def main() -> None:
+    setup_cjk()
+    G = panel_layout()
+    rep = G["rep"]
+    W, H, R = G["W"], G["H"], G["R"]
+    kw, kr, keys, knob, led = G["key_win"], G["key_r"], G["keys"], G["knob"], G["led"]
 
     fig, ax = plt.subplots(figsize=(13.5, 7.6), dpi=160)
     ax.set_aspect("equal")
