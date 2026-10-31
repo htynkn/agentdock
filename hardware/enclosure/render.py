@@ -12,6 +12,17 @@ OUT = HERE / "output"
 RENDER = HERE / "render"
 RENDER.mkdir(exist_ok=True)
 
+# PCB 局部 → 外壳坐标的平移量，直接从生成好的 pcb_report.json + 建模参数算，
+# 不要在渲染脚本里硬编码（CLEAR 一改，这里跟着自动变）。
+import json
+import sys as _sys
+_sys.path.insert(0, str(HERE))
+from enclosure import CLEAR, WALL, Z_PCB_BOT   # noqa: E402
+_bb = json.loads((OUT / "pcb_report.json").read_text())["board"]["bbox"]
+DX = WALL + CLEAR - _bb[0]
+DY = WALL + CLEAR - _bb[1]
+Z_PCB = Z_PCB_BOT
+
 
 def setup_cjk() -> bool:
     from matplotlib import font_manager
@@ -111,27 +122,36 @@ def translate(verts, dxyz):
 t0 = time.time()
 base = load_stl(OUT / "Base_lowres.stl")
 lid = load_stl(OUT / "Lid_lowres.stl")
-pcb = load_pcb_stl() + np.array([2.0873, 2.0873, 5.0])   # 局部 → 世界
+panel = load_stl(OUT / "Panel_lowres.stl") if (OUT / "Panel_lowres.stl").exists() else None
+pcb = load_pcb_stl() + np.array([DX, DY, Z_PCB])
 
 ORANGE = (0.96, 0.47, 0.16)
 BLUE = (0.25, 0.46, 0.72)
 GREEN = (0.15, 0.55, 0.30)
+GLASS = (0.70, 0.78, 0.88)
 
 assembled = [(base, ORANGE), (pcb, GREEN), (lid, BLUE)]
+if panel is not None:
+    assembled.append((panel, GLASS))
 exploded = [(base, ORANGE), (translate(pcb, (0, 0, 18)), GREEN),
             (translate(lid, (0, 0, 40)), BLUE)]
+if panel is not None:
+    exploded.append((translate(panel, (0, 0, 62)), GLASS))
 
-fig = plt.figure(figsize=(13, 10.5), dpi=160, facecolor="white")
+fig = plt.figure(figsize=(15, 11), dpi=160, facecolor="white")
 views = [
     (assembled, 24, 135, T("装配等轴（USB 侧）", "Assembled (USB side)")),
     (assembled, 24, 45, T("装配等轴（蜂鸣器侧）", "Assembled (buzzer side)")),
-    (exploded, 18, 120, T("爆炸图", "Exploded")),
-    (assembled, 89, -90, T("俯视（键窗/旋钮/导光孔）", "Top (keys / knob / light pipe)")),
+    (exploded, 18, 120, T("爆炸图（含亚克力面板）", "Exploded (+ acrylic panel)")),
+    (assembled, 89, -90, T("俯视：面板/键窗/旋钮/导光孔", "Top: panel / keys / knob")),
+    ([(lid, BLUE)], -32, -60, T("顶盖内表面：加强肋", "Lid underside: stiffening ribs")),
+    ([(base, ORANGE)], -30, -60, T("Base 底面：螺丝沉孔", "Base bottom: counterbores")),
 ]
 for i, (parts, elev, azim, title) in enumerate(views, 1):
-    ax = fig.add_subplot(2, 2, i, projection="3d")
+    ax = fig.add_subplot(2, 3, i, projection="3d")
     draw_view(ax, parts, elev, azim, title)
-fig.suptitle(T("AgentDock 外壳 — Base / PCB / Lid", "AgentDock Enclosure - Base / PCB / Lid"), fontsize=16)
+fig.suptitle(T("AgentDock 外壳 — Base / PCB / Lid / 面板",
+               "AgentDock Enclosure - Base / PCB / Lid / Panel"), fontsize=16)
 fig.subplots_adjust(left=0.01, right=0.99, top=0.94, bottom=0.01, wspace=0.0, hspace=0.05)
 fig.savefig(RENDER / "enclosure_views.png", facecolor="white")
 plt.close(fig)

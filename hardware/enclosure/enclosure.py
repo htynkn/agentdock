@@ -7,16 +7,23 @@
 设计基准（全部来自 PCB 3D 模型的实测值，见 ``pcb_model.py``）：
 
 * 板框 **91.975 × 42.975 × 1.586**，四角 R2.987，4 × Ø2.7 安装孔
-* PCB 局部坐标 → 外壳坐标：``+ (2.087, 2.087, 5.0)``
-  即 PCB 底面在外壳 z=5.0，底面四周留 0.5 mm + 1.6 mm 壁厚
-* 外壳外形 **96.175 × 47.175**，总高 **20.1**（底座 18.5 + 顶盖 1.6）
+* PCB 局部坐标 → 外壳坐标：``+ (2.587, 2.587, 5.0)``
+  即 PCB 底面在外壳 z=5.0，底面四周留 1.0 mm（可左右微调）+ 1.6 mm 壁厚
+* 外壳外形 **97.175 × 48.175**，总高 **22.2**
+  （底座 18.5 + 顶板 2.0 + 面板凸边框 1.7）
 
-两件式结构：
+三件式结构：
 
-* **Base**（底座）= 底板 + 四壁 + 4 个螺丝凸台（右侧两只带连接筋）+ 5 条纵向筋
-  + 1 条横向筋 + 侧壁开口
-* **Lid**（顶盖）= 1.6 mm 顶板 + 4 根带胶粘滚花螺母孔的立柱 + 一圈定位止口（立柱处开缺口）
-  + 键位窗口 / 旋钮孔 / 阶梯导光孔
+* **Base**（底座）= 底板 + 四壁 + 4 个 Ø8 螺丝凸台（右侧两只带连接筋）
+  + 5 条纵向筋 + 1 条横向筋 + 侧壁开口
+  螺丝孔从底面进入：Ø6.0 沉孔 → 45° 导向锥 → Ø3.4 过孔（耐受 ±0.45 的
+  PCB 孔位偏差，解决首版「螺丝孔对不齐」）
+* **Lid**（顶盖）= 2.0 mm 顶板 + 四周 1.7 mm 凸边框（面板安装口）+ 4 根立柱
+  （Ø6，胶粘滚花螺母）+ 3.0 mm 定位止口（立柱处开缺口）+ 键位窗口 / 旋钮孔 /
+  阶梯导光孔 + 4 条加强肋（键窗之间的竖肋 + 键窗上方的横向肋），全在顶板底下
+* **Panel**（亚克力面板，嘉立创面板下单）= 1.5 mm + 0.2 背胶，嵌在凸边框内圈，
+  贴完与边框齐平；开孔（键窗 ×3 / 旋钮 / 导光）全部从外壳参数派生，
+  ``output/Panel.dxf`` 可直接下单
 
 在线 3D 打印平台的「模型存在薄壁结构」警告不用猜：``thickness_check.py`` 用射线法
 复现同一个判定（局部壁厚 < 0.5 mm），按面积聚类输出包围盒，直接定位到具体参数；
@@ -32,8 +39,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from build123d import (
-    Align, Box, Cylinder, Pos, Rectangle, RectangleRounded, Rot, export_step,
-    export_stl, extrude, fillet,
+    Align, Box, Circle, Cone, Cylinder, ExportDXF, Pos, Rectangle,
+    RectangleRounded, Rot, export_step, export_stl, extrude, fillet,
 )
 
 import pcb_model
@@ -50,17 +57,54 @@ def log(msg: str):
 # --- 壳体基本尺寸 ---------------------------------------------------------
 WALL = 1.6                    # 壁厚
 FLOOR = 1.6                   # 底板厚
-CLEAR = 0.5                   # 内腔与 PCB 板边的单边间隙
-LID_T = 1.6                   # 顶板厚
+CLEAR = 1.0                   # 内腔与 PCB 板边的单边间隙
+                              # 0.5 → 1.0：首版打印件实测「螺丝孔对不齐，PCB 放上去只
+                              # 露半个孔」。原因是 PCB 在腔里只有 ±0.5 的活动量，
+                              # 而 Ø2.7 过孔相对 Ø2.5 螺杆只留 ±0.1，再加 FDM 收缩
+                              # ≈0.4 %@86 mm ≈0.34 mm，必然错位。放大到 1.0 后：
+                              # 装板时可以左右挪，先让 USB-C / 拨柄对齐侧壁开口，
+                              # 再用加大的沉孔 + 导向锥吸收残余偏差（见 SCREW_*）。
+LID_T = 2.0                   # 顶板厚（1.6 → 2.0，见下方「顶盖加强」）
 
 # --- Z 向尺寸链 -----------------------------------------------------------
 Z_PCB_BOT = 5.0               # PCB 底面高度（= 凸台/筋顶面）
 Z_KEYS_CLEAR = 0.46           # 键体顶面与顶盖底面的间隙
 Z_LID_BOT = Z_PCB_BOT + 13.5  # 顶盖底面 = 底座壁顶 = 18.50
-Z_TOP = Z_LID_BOT + LID_T     # 顶面上表面 = 20.10
+Z_TOP = Z_LID_BOT + LID_T     # 顶板上表面 = 20.50
+
+# --- 顶板凸边框 / 亚克力面板安装口 ---------------------------------------
+# 顶部做成一圈 2.6 mm 宽的凸起边框，边框里面就是亚克力面板的位置：面板
+# 1.5 mm 厚 + 0.2 mm 背胶，贴上去正好与边框齐平，边框把面板四边包住（既定位
+# 又保护边缘，不会磕手）。边框同时是顶板四周的加强筋（见「顶盖加强」）。
+RIM_W = 2.6                   # 边框宽度（= 面板到外壳外缘的 inset）
+PANEL_T = 1.5                 # 亚克力/PC 面板厚度（嘉立创面板常用 1.5）
+PANEL_TAPE = 0.2              # 背胶（3M 双面胶）厚度
+RIM_H = PANEL_T + PANEL_TAPE  # 边框高度 = 面板 + 背胶，贴完齐平 = 1.7
+Z_RIM_TOP = Z_TOP + RIM_H     # 边框上表面 = 22.20
+PANEL_GAP = 0.15               # 面板与边框内壁的单边间隙
+PANEL_KEY_PAD = 0.10          # 面板键窗比顶盖键窗单边放大（面板加工公差 ±0.1）
+PANEL_KNOB_CUT = 13.8         # 面板旋钮开孔（≥ 顶盖 Ø13.6 旋钮沉台）
+PANEL_LED_CUT = 3.6           # 面板导光开孔（≥ 顶盖 Ø3.4 出光孔）
+
+# --- 顶盖加强 -------------------------------------------------------------
+# 首版上盖偏软：3 个 19×19 键窗把顶板切成 1.64 mm 宽的窄条，窄条与顶板一样
+# 只有 1.6 mm 厚。下面几条都不增加外形高度、也不需要支撑：
+#   * LID_T 1.6 → 2.0（弯曲刚度 ∝ t³，+95 %）
+#   * 键窗之间的窄条下面加 4 mm 深竖肋 → 窄条变成 6 mm 高的 T 形梁
+#   * 键窗上方空档加一条横向肋，把两片区域连起来
+#   * 定位止口 LIP_H 1.5 → 3.0，四周变成一圈 3 mm 高的裙边
+#   * 顶板四周 2.6 mm 宽的凸边框（即面板安装口）
+# 竖肋必须夹在两个键窗的正中间，而且不能伸进键窗（键帽要穿过窗口，按下时还会
+# 下沉 ~0.6），所以宽度只能取到 1.0，两侧各留 0.32 安全边。
+LID_WEB_W, LID_WEB_H = 1.0, 4.0     # 竖肋：宽 / 从顶板底面往下的深度
+LID_WEB_Y1 = 29.0                   # 竖肋的收尾（PCB 局部 Y）
+                                    # WS2812 Ø8 集光口下沿在 y = 29.78，让开 0.78
+LID_RIB_W, LID_RIB_H = 1.2, 4.0     # 横向肋：宽 / 深度
+LID_RIB_Y = 24.5                    # 横向肋的 PCB 局部 Y：键窗上沿 20.93 与编码器
+                                    # 套管下沿 28.2 之间的空档，下面没有任何高元件
 
 # --- 紧固系统：M2.5 × 8 圆头 + 胶粘滚花螺母 Ø3.5 × 4.0（通孔螺纹）-------
-# 螺丝从**底面**穿入：头部沉孔 z 0–2.0 → 底座凸台 → PCB → 顶盖立柱里的螺母。
+# 螺丝从**底面**穿入：头部沉孔 z 0–2.2 → 导向锥 2.2–3.5 → 底座凸台 → PCB → 顶盖立柱里的螺母。
 # 四角立柱柱脚全部落在 PCB 顶面（z = 6.786），螺母腔口就在柱脚，
 # 螺母一推到柱脚就顶住腔底天花板 → 四根柱完全一致，同一螺丝长度。
 # （旧版编码器在右上角，金属支架把柱脚顶到 z = 11.29，四柱不等长，
@@ -68,12 +112,27 @@ Z_TOP = Z_LID_BOT + LID_T     # 顶面上表面 = 20.10
 #   支架让开了安装孔，这个特殊处理已全部取消。）
 # 螺母不是热熔（热压）型：腔体对 Ø3.5 单边留 0.15 胶层，靠 AB 环氧胶固定。
 SCREW_LEN = 8                 # M2.5 × 8（M2.5 × 12 现会顶穿螺母腔天花板）
-SCREW_PASS_D = 2.7            # 螺杆过孔（底座凸台 + PCB 安装孔）；顶盖侧不用它
-HEAD_D, HEAD_T = 4.8, 2.0     # 螺丝头沉孔（从底面进）：M2.5 圆头实际 Ø4.6，
-                              # 沉孔 Ø4.8 → 与 Ø6 凸台外圆之间留 (6.0−4.8)/2 = 0.6；
-                              # 用 Ø5.0 时只剩 0.5，正好压在薄壁阈值上
+SCREW_D = 2.5                 # 螺杆公称直径（只用于公差链自检）
+SCREW_PASS_D = 3.4            # 底座凸台里的螺杆过孔：2.7 → 3.4
+                              # 这一圈的松紧决定了 PCB 孔位的容错：Ø2.7 时螺杆被
+                              # PCB 安装孔「夹死」，PCB 一偏螺丝就拧不进去；
+                              # Ø3.4 单边留 0.45，正好吃掉 PCB 左右微调量
+                              # + 打印收缩（0.4 %@86 mm ≈ 0.34）。
+HEAD_D, HEAD_T = 6.0, 2.2     # 螺丝头沉孔（从底面进）：M2.5 圆头实际 Ø4.6。
+                              # 4.8 → 6.0：Ø4.8 只给头部 ±0.1 的横向余量，等于
+                              # 把螺杆位置焊死在凸台轴心；Ø6.0 给到 ±0.7。
+                              # 与 Ø8 凸台外圆之间留 1.0 壁（薄壁阈值 0.5 的 2 倍）
+HEAD_CONE_H = 1.3             # 沉孔底 → 过孔的 45° 导向锥（Ø6.0 → Ø3.4）：
+                              # 螺丝从底面插进来时自动滑向过孔中心
 SCREW_HEAD_H = 1.9            # M2.5 圆头实际高度（只用于啮合长度计算）
-POST_D = 6.0                  # 凸台 / 立柱直径
+POST_D = 8.0                  # 底座凸台直径：6.0 → 8.0
+                              # 只有加粗才装得下 Ø6.0 沉孔（(8−6)/2 = 1.0 壁），
+                              # 同时四根螺丝柱的顶面更大，PCB 压得更稳
+LID_POST_D = 6.0              # 顶盖立柱直径（不跟着加粗）：右上角立柱用 Ø8 时，
+                              # 柱脚探测半径会碰到编码器金属支架（顶面 z=6.09），
+                              # 那根柱子就得到 11.29 才能避开，四根柱脚高度不统一、
+                              # 螺母腔跟着抬到 11.49，螺丝根本吃不到牙。保持 Ø6 后
+                              # 四根柱脚仍全部落在 PCB 顶面。
 NUT_OD = 3.5                  # 滚花铜螺母外径（M2.5 × L4.0，通孔螺纹）
 NUT_D, NUT_L = NUT_OD + 0.3, 4.0   # 螺母孔 Ø3.8（对 Ø3.5 螺母留 0.15/边胶层）
 NUT_DEPTH = 4.2               # 螺母孔总深（含孔口台阶）
@@ -86,7 +145,9 @@ NUT_DEPTH = 4.2               # 螺母孔总深（含孔口台阶）
 # （打印时是盲孔吊顶上的圆环，Ø4.4 跨距无需支撑）。
 # 台阶深度必须 > 0.5：Ø4.4↔Ø3.8 之间那圈 0.3 mm 宽环带的厚度就等于台阶深，
 # 取 0.4 时正好被壁厚自检抓到（11.16 mm² @ 0.40），所以取 0.8。
-NUT_STEP_D, NUT_STEP_T = 4.4, 0.8
+NUT_STEP_D, NUT_STEP_T = 4.4, 0.8   # 孔口引导台阶（位于柱脚，兼作储胶槽）：
+                                    # 不用 45° 倒角（锥面与 Ø6 立柱外圆之间只剩
+                                    # 0.42 的斜壁 → 判薄壁），直角台阶留 0.8
 
 # --- 加强筋 ---------------------------------------------------------------
 Z_RIB_TOP = Z_PCB_BOT         # 筋顶面 = PCB 底面
@@ -129,9 +190,15 @@ LED_PORT_D1, LED_PORT_T1 = 5.2, 0.4        # 内侧第 2 级
 LED_EXIT_D = 3.4                           # 出光孔（顶板余料 0.8 mm）
 
 # --- 顶盖定位止口 ---------------------------------------------------------
-LIP_T, LIP_H, LIP_GAP = 1.2, 1.5, 0.15     # 止口厚 / 高 / 与内腔单边间隙
-LIP_NOTCH = 2.0               # 止口在 4 根立柱周围让开的径向余量：
-                              # 立柱外圆与止口内壁原本只剩 0.49 mm，判薄壁
+LIP_T, LIP_H, LIP_GAP = 1.2, 3.0, 0.15     # 止口厚 / 高 / 与内腔单边间隙
+                              # 高 1.5 → 3.0：止口是顶盖四周的裙边，加深一倍后
+                              # 顶板边缘的抗弯刚度显著提高，同时插进底座更深、
+                              # 盖上去不容易错缝
+LIP_NOTCH = 2.6               # 止口在 4 根立柱周围让开的径向余量：
+                              # 立柱外圆与止口内壁离得很近，直接相交会切出刀口状
+                              # 薄楔形；notch 半径 = LID_POST_D/2 + LIP_NOTCH = 5.6，
+                              # 必须大于「立柱轴心 → 止口外表面」的距离（右侧
+                              # 5.19），否则会在立柱旁边残留一条锥形薄壁
 
 # --- Type-C 面板开口 ------------------------------------------------------
 # 真实 Type-C 插头是 8.25 × 2.4，插座空腔实测 8.40 × 2.66（几乎无余量），
@@ -196,6 +263,12 @@ def cyl(x, y, z0, z1, r):
                                     align=(Align.CENTER, Align.CENTER, Align.MIN))
 
 
+def cone(x, y, z0, z1, r0, r1):
+    """截锥：z0 处半径 r0，z1 处半径 r1（用于螺丝沉孔→过孔的导向锥）。"""
+    return Pos(x, y, z0) * Cone(r0, r1, z1 - z0,
+                                align=(Align.CENTER, Align.CENTER, Align.MIN))
+
+
 def slot_x(x0, x1, y_c, z_c, y_span, z_span, r):
     """在**法线沿 X** 的墙上开圆角矩形槽（从 x0 挖到 x1）。
 
@@ -247,13 +320,16 @@ def build_base(L: Layout) -> "Part":
             base += plate(x, y - GUSSET_W / 2, cx1, y + GUSSET_W / 2,
                           FLOOR, Z_RIB_TOP, RIB_R)
 
-    # 4.2c 螺丝过孔 + 头部沉孔 —— 必须在加完筋之后切：
+    # 4.2c 螺丝过孔 + 头部沉孔 + 导向锥 —— 必须在加完筋之后切：
     #      筋从凸台轴心铺到内壁，会覆盖过孔/沉孔所在的区域；先切后加筋会把
-    #      右侧两个螺丝的Ø2.7 过孔和 Ø4.8 沉孔重新填掉一半，螺丝就装不进去。
+    #      右侧两个螺丝的过孔和沉孔重新填掉一半，螺丝就装不进去。
+    #      从底面看依次是：Ø6.0 沉孔（2.2 深）→ 45° 导向锥（1.3 高）→ Ø3.4 过孔。
     for hx, hy, _ in m.mount_holes:
         x, y = L.XY(hx, hy)
         base -= cyl(x, y, -0.5, Z_PCB_BOT, SCREW_PASS_D / 2)
         base -= cyl(x, y, -0.5, HEAD_T, HEAD_D / 2)
+        base -= cone(x, y, HEAD_T, HEAD_T + HEAD_CONE_H,
+                     HEAD_D / 2, SCREW_PASS_D / 2)
 
     # 4.3 加强筋：5 条纵向 + 1 条横向，只铺在「板底无元件」的走廊里
     #     板底最低点为销脚 z=-1.91，故筋只出现在这些空档：
@@ -324,7 +400,7 @@ def contact_z_local(m: pcb_model.PcbModel, hx: float, hy: float) -> float:
     顶面 1.586（编码器金属支架已让开右上角），四根柱脚全部落在 z=1.786。
     仍用 max_z_near 实测而不写死数值：以后 PCB 再把高元件挪到某个角下面，
     对应立柱会自动缩短。"""
-    return max(m.z_top, m.max_z_near(hx, hy, POST_D / 2 + 0.3) + 0.2)
+    return max(m.z_top, m.max_z_near(hx, hy, LID_POST_D / 2 + 0.3) + 0.2)
 
 
 def nut_bottom_local(m: pcb_model.PcbModel) -> float:
@@ -341,10 +417,18 @@ def build_lid(L: Layout) -> "Part":
     cx0, cy0, cx1, cy1 = L.cav
     z_nut = L.Z(nut_bottom_local(m))       # 四个螺母孔底面（外壳坐标，统一）
 
-    # 5.1 顶板 + 一圈定位止口（插进底座内腔口，单边 0.15 间隙）
-    #     止口在 4 根立柱周围开缺口：止口内壁离立柱外圆只有 0.49 mm，会在
-    #     立柱两侧形成楔形薄壁；开缺口后止口只在四面直壁中段起定位作用。
+    # 5.1 顶板 + 四周凸边框（面板安装口）+ 一圈定位止口
+    #     凸边框：顶面外圈抬高 RIM_H = 面板 + 背胶，面板贴进去后与边框齐平，
+    #     边框同时是顶板四周的一圈加强梁。边框内壁就是面板的定位尺寸。
+    #     止口在 4 根立柱周围开缺口：止口内壁离立柱外圆很近，直接相交会
+    #     切出刀口状薄楔形；开缺口后止口只在四面直壁中段起定位作用。
     lid = plate(0, 0, L.out_w, L.out_d, Z_LID_BOT, Z_TOP, L.out_r)
+    rim_sk = (RectangleRounded(L.out_w, L.out_d, L.out_r)
+              - RectangleRounded(L.out_w - 2 * RIM_W, L.out_d - 2 * RIM_W,
+                                 max(L.out_r - RIM_W, 0.5)))
+    # 往下多长 0.5 是为了和顶板重叠，避免共面布尔
+    lid += Pos(L.out_w / 2, L.out_d / 2, Z_TOP - 0.5) * extrude(rim_sk, RIM_H + 0.5)
+
     r_out = L.cav_r - LIP_GAP
     lip = plate(cx0 + LIP_GAP, cy0 + LIP_GAP, cx1 - LIP_GAP, cy1 - LIP_GAP,
                 Z_LID_BOT - LIP_H, Z_LID_BOT + 0.1, r_out)
@@ -355,17 +439,17 @@ def build_lid(L: Layout) -> "Part":
     for hx, hy, _ in m.mount_holes:
         x, y = L.XY(hx, hy)
         lip -= cyl(x, y, Z_LID_BOT - LIP_H - 1.0, Z_LID_BOT + 1.0,
-                   POST_D / 2 + LIP_NOTCH)
+                   LID_POST_D / 2 + LIP_NOTCH)
     lid += lip
 
     # 5.2 四根立柱：柱脚全部落到 PCB 顶面 + 0.2（z = 6.786，编码器已让开
-    #     右上角）；螺母腔口就在柱脚（z 6.79–10.99，Ø3.8 × 4.2），
-    #     螺母推到底（0 行程）即顶住腔底；孔口 Ø4.4 × 0.8 台阶兼储胶槽。
+    #     右上角）；螺母腔口就在柱脚（Ø3.8 × 4.2），螺母推到底（0 行程）即顶住
+    #     腔底；孔口 Ø5.0 × 0.8 台阶兼当导入喇叭口 / 储胶槽。
     #     四根柱子因此完全一致：同一长度螺丝、同一种螺母。
     for hx, hy, _ in m.mount_holes:
         x, y = L.XY(hx, hy)
         foot = L.Z(contact_z_local(m, hx, hy))
-        lid += cyl(x, y, foot, Z_LID_BOT + 0.2, POST_D / 2)
+        lid += cyl(x, y, foot, Z_LID_BOT + 0.2, LID_POST_D / 2)
         lid -= cyl(x, y, foot - 0.5, z_nut + NUT_DEPTH, NUT_D / 2)   # 螺母孔
         lid -= cyl(x, y, foot - 0.5, foot + NUT_STEP_T,               # 孔口台阶（柱脚处）
                    NUT_STEP_D / 2)
@@ -393,7 +477,60 @@ def build_lid(L: Layout) -> "Part":
     lid -= cyl(lx, ly, z_in, z_in + 0.1 + LED_PORT_T0 + LED_PORT_T1,
                LED_PORT_D1 / 2)
     lid -= cyl(lx, ly, z_in, Z_TOP + 0.5, LED_EXIT_D / 2)
+
+    # 5.6 顶盖加强肋（都在顶板底下，上面看不见）
+    #     竖肋：夹在两个键窗正中间的那条 1.64 mm 窄条下面。肋只有 1.2 宽，
+    #     不碰到键窗（键帽要穿过窗口，按下时还会下沉 ~0.6），却把窄条从
+    #     2.0 mm 平板变成 6 mm 高的 T 形梁——上盖“发软”的主要根源就在这里。
+    #     横向肋：键窗上方那条没有元件的空档，把左右两片区域连成整体。
+    z_web_bot = Z_LID_BOT - LID_WEB_H
+    z_rib_bot = Z_LID_BOT - LID_RIB_H
+    kc = sorted(k["center"][0] for k in m.keys)
+    for x_l in ((kc[0] + kc[1]) / 2, (kc[1] + kc[2]) / 2):
+        lid += plate(L.X(x_l - LID_WEB_W / 2), cy0 + LIP_GAP,
+                     L.X(x_l + LID_WEB_W / 2), L.Y(LID_WEB_Y1),
+                     z_web_bot, Z_LID_BOT + 0.1)
+    lid += plate(cx0 + LIP_GAP, L.Y(LID_RIB_Y - LID_RIB_W / 2),
+                 cx1 - LIP_GAP, L.Y(LID_RIB_Y + LID_RIB_W / 2),
+                 z_rib_bot, Z_LID_BOT + 0.1)
     return lid
+
+
+# ===========================================================================
+# 5b. 亚克力面板（嘉立创面板）
+# ===========================================================================
+# 面板贴在顶板凸边框的内圈里：厚度 PANEL_T + 背胶 PANEL_TAPE，四周单边
+# PANEL_GAP。开孔统一从外壳的参数派生，所以面板 DXF 永远和顶盖一致：
+#   * 3 个键窗 = 顶盖键窗单边放大 PANEL_KEY_PAD（吸收面板加工公差）
+#   * 旋钮 Ø13.8（露出顶盖 Ø13.6 旋钮沉台，旋钮裙边仍能沉下去）
+#   * 导光孔 Ø3.6（对准顶盖 Ø3.4 出光孔）
+def panel_sketch(L: Layout):
+    w = L.out_w - 2 * (RIM_W + PANEL_GAP)
+    h = L.out_d - 2 * (RIM_W + PANEL_GAP)
+    r = max(L.out_r - RIM_W - PANEL_GAP, 0.5)
+    sk = Pos(L.out_w / 2, L.out_d / 2) * RectangleRounded(w, h, r)
+    for k in L.m.keys:
+        x, y = L.XY(*k["center"])
+        a = KEY_WIN + 2 * PANEL_KEY_PAD
+        sk -= Pos(x, y) * RectangleRounded(a, a, KEY_WIN_R + PANEL_KEY_PAD)
+    ex, ey = L.XY(*L.m.encoder["center"])
+    sk -= Pos(ex, ey) * Circle(PANEL_KNOB_CUT / 2)
+    led = L.m.parts["led"]
+    lx, ly = L.XY((led[0] + led[3]) / 2, (led[1] + led[4]) / 2 + LED_PORT_SHIFT)
+    sk -= Pos(lx, ly) * Circle(PANEL_LED_CUT / 2)
+    return sk
+
+
+def build_panel(L: Layout) -> "Part":
+    """面板实体（只用于渲染 / 干涉校验；实际制造看 panel.dxf）。"""
+    return Pos(0, 0, Z_TOP + PANEL_TAPE) * extrude(panel_sketch(L), PANEL_T)
+
+
+def export_panel_dxf(L: Layout, path: Path) -> None:
+    """导出面板 2D 轮廓 + 开孔，直插嘉立创面板下单（DXF，单位 mm）。"""
+    exp = ExportDXF()
+    exp.add_shape(list(panel_sketch(L).faces()), layer="PANEL")
+    exp.write(str(path))
 
 
 # ===========================================================================
@@ -410,13 +547,16 @@ def build(verbose: bool = True):
         log(f"[{time.time() - t0:6.1f}s] build_base 完成，build_lid ...")
     lid = build_lid(L)
     if verbose:
-        log(f"[{time.time() - t0:6.1f}s] build_lid 完成（建模总耗时 {time.time() - t0:.1f}s）")
-    return m, L, base, lid
+        log(f"[{time.time() - t0:6.1f}s] build_lid 完成，build_panel ...")
+    panel = build_panel(L)
+    if verbose:
+        log(f"[{time.time() - t0:6.1f}s] build_panel 完成（建模总耗时 {time.time() - t0:.1f}s）")
+    return m, L, base, lid, panel
 
 
 def main():
     t0 = time.time()
-    m, L, base, lid = build()
+    m, L, base, lid, panel = build()
     OUT.mkdir(exist_ok=True)
 
     exports = [
@@ -428,6 +568,11 @@ def main():
                                                tolerance=0.1, angular_tolerance=0.3)),
         ("Lid_lowres.stl", lambda: export_stl(lid, str(OUT / "Lid_lowres.stl"),
                                               tolerance=0.1, angular_tolerance=0.3)),
+        ("Panel.stl", lambda: export_stl(panel, str(OUT / "Panel.stl"),
+                                         tolerance=0.05, angular_tolerance=0.2)),
+        ("Panel_lowres.stl", lambda: export_stl(panel, str(OUT / "Panel_lowres.stl"),
+                                                tolerance=0.1, angular_tolerance=0.3)),
+        ("Panel.dxf", lambda: export_panel_dxf(L, OUT / "Panel.dxf")),
     ]
     for name, fn in exports:
         t = time.time()
@@ -455,8 +600,20 @@ def main():
     chk("Lid Y", bb.size.Y, L.out_d)
     chk("Lid 最低柱脚", bb.min.Z, L.Z(min(
         contact_z_local(m, hx, hy) for hx, hy, _ in m.mount_holes)))
-    chk("Lid 顶面", bb.max.Z, Z_TOP)
+    chk("Lid 顶面(边框)", bb.max.Z, Z_RIM_TOP)
     chk("Lid 实体数", len(lid.solids()), 1)
+
+    # 亚克力面板：尺寸、贴上去是否与边框齐平、能否落在边框内圈
+    pbb = panel.bounding_box()
+    chk("Panel X", pbb.size.X, L.out_w - 2 * (RIM_W + PANEL_GAP))
+    chk("Panel Y", pbb.size.Y, L.out_d - 2 * (RIM_W + PANEL_GAP))
+    chk("Panel 顶面", pbb.max.Z, Z_RIM_TOP)          # 面板 + 背胶 ⇒ 与边框齐平
+    chk("Panel 实体数", len(panel.solids()), 1)
+    v_panel = (panel & lid).volume                   # 面板与顶盖必须不相交
+    good = v_panel < 0.01
+    ok &= good
+    print(f"  {'✓' if good else '✗'} Lid ∩ Panel          {v_panel:9.4f} mm³"
+          f"  （面板嵌在边框内圈，直径间隙 {2 * PANEL_GAP:.2f} mm）", flush=True)
 
     # PCB 与两件的精确干涉（把壳体逆平移到 PCB 局部坐标后求交）。
     # 整 compound 直接布尔交在 CI 的 2 核 runner 上极慢（曾 >5min 超时被杀），
@@ -510,7 +667,7 @@ def main():
     log("\n========== 螺母装配自检 ==========")
     z_seat = L.Z(nut_bottom_local(m)) + NUT_DEPTH    # 腔底天花板 = 螺母顶面
     z_nut_bot = z_seat - NUT_L                       # 螺母座到位后的底面
-    z_tip = SCREW_HEAD_H + SCREW_LEN                 # 螺丝尖端（头部贴底时）
+    z_tip = HEAD_T + SCREW_LEN                       # 螺丝尖端（头部坐在沉孔底）
     for i, (hx, hy, _) in enumerate(m.mount_holes, 1):
         x, y = L.XY(hx, hy)
         foot = L.Z(contact_z_local(m, hx, hy))
@@ -524,6 +681,98 @@ def main():
               f"余料 {v:6.3f} mm³  啮合 {engage:4.2f} mm", flush=True)
     print(f"     螺母占 z {z_nut_bot:.2f}–{z_seat:.2f}，螺丝尖端 z {z_tip:.2f}"
           f"（尖端留空 {z_seat - z_tip:.2f} mm，不顶底）", flush=True)
+
+    # ---- 装配公差预算：首次打印件「螺丝孔对不齐」的直接原因 -----------------
+    # 拧螺丝时，螺杆的横向位置被**链条上最紧的一环**钉死：PCB 安装孔 Ø2.7 对
+    # Ø2.5 螺杆只留 0.1，所以螺杆实际上跟着 PCB 孔走；PCB 孔位相对凸台的偏差
+    # （PCB 在腔里的位置 + 打印收缩）必须被底座过孔 / 沉孔 / 螺母腔吃掉。
+    log("\n========== 装配公差预算 ==========")
+    slack_pass = (SCREW_PASS_D - SCREW_D) / 2
+    slack_head = (HEAD_D - 4.6) / 2
+    slack_nut = (NUT_D - SCREW_D) / 2
+    shrink = 0.004 * 86.0                       # FDM 0.4 % × 螺孔间距 86 mm
+    budget_lines = [
+        ("底座过孔 Ø%.1f" % SCREW_PASS_D, slack_pass, "吸收 PCB 孔位偏差"),
+        ("沉孔 Ø%.1f" % HEAD_D, slack_head, "螺丝头横向余量"),
+        ("螺母腔 Ø%.1f" % NUT_D, slack_nut, "螺杆进螺母的余量"),
+    ]
+    for name, s, why in budget_lines:
+        print(f"     {name:12s} 单边 {s:4.2f} mm   {why}", flush=True)
+    print(f"     板侧只留 {0.1:.2f} mm（Ø2.7 孔 / Ø2.5 螺杆）→ 螺杆跟着 PCB 孔走", flush=True)
+    print(f"     打印收缩估算 0.4 %@86 mm ≈ {shrink:.2f} mm（对称收缩时单侧 ≈ {shrink / 2:.2f}）",
+          flush=True)
+    good = slack_pass >= 0.35 and slack_head >= 0.35 and slack_nut >= 0.35
+    ok &= good
+    print(f"  {'✓' if good else '✗'} 允许 PCB 孔位偏差 ±{slack_pass:.2f} mm"
+          f"（要求 ≥ 0.35，原版 Ø2.7 只有 0.10）", flush=True)
+
+    # ---- 顶盖加强肋自检：肋不能碰到键窗 / 旋钮孔 / 导光孔 -------------------
+    # 肋全部在顶板下面，所以只跟“会钻到顶板下面”的东西冲突：键帽穿过键窗时
+    # 按下会下沉，旋钮套管、导光锥都在肋的高度范围内。这里直接算 XY 平面上的
+    # 最小间距，要求 ≥ 0.15 mm。
+    log("\n========== 顶盖加强肋自检 ==========")
+    cx0, cy0, cx1, cy1 = L.cav
+    led_bb = m.parts["led"]
+    lx, ly = L.XY((led_bb[0] + led_bb[3]) / 2,
+                  (led_bb[1] + led_bb[4]) / 2 + LED_PORT_SHIFT)
+    kxs = sorted(k["center"][0] for k in m.keys)
+    ribs = [(f"竖肋{i + 1}", L.X(x_l - LID_WEB_W / 2), cy0 + LIP_GAP,
+             L.X(x_l + LID_WEB_W / 2), L.Y(LID_WEB_Y1), LID_WEB_H)
+            for i, x_l in enumerate(((kxs[0] + kxs[1]) / 2, (kxs[1] + kxs[2]) / 2))]
+    ribs.append(("横向肋", cx0 + LIP_GAP, L.Y(LID_RIB_Y - LID_RIB_W / 2),
+                 cx1 - LIP_GAP, L.Y(LID_RIB_Y + LID_RIB_W / 2), LID_RIB_H))
+    obstacles = []
+    for k in m.keys:
+        x, y = L.XY(*k["center"])
+        obstacles.append((f"键窗@{x:.0f}", (x - KEY_WIN / 2, y - KEY_WIN / 2,
+                                            x + KEY_WIN / 2, y + KEY_WIN / 2)))
+    ex, ey = L.XY(*m.encoder["center"])
+    obstacles.append(("旋钮孔", (ex, ey, KNOB_HOLE_D / 2)))
+    obstacles.append(("导光孔", (lx, ly, LED_PORT_D0 / 2)))
+
+    def rect_gap(r, ob):
+        """矩形到障碍物的距离（len 为 3 = 圆，4 = 矩形），相交返回 -1。"""
+        if len(ob) == 3:
+            px, py, rad = ob
+            qx = min(max(px, r[0]), r[2])
+            qy = min(max(py, r[1]), r[3])
+            return ((px - qx) ** 2 + (py - qy) ** 2) ** 0.5 - rad
+        dx = max(ob[0] - r[2], r[0] - ob[2], 0.0)
+        dy = max(ob[1] - r[3], r[1] - ob[3], 0.0)
+        return -1.0 if dx == 0.0 and dy == 0.0 else (dx * dx + dy * dy) ** 0.5
+
+    for name, x0, y0, x1, y1, h in ribs:
+        g, worst = 1e9, ""
+        for oname, ob in obstacles:
+            d = rect_gap((x0, y0, x1, y1), ob)
+            if d < g:
+                g, worst = d, oname
+        good = g >= 0.15
+        ok &= good
+        print(f"  {'✓' if good else '✗'} {name:6s} X {x0:6.2f}…{x1:6.2f}  "
+              f"Y {y0:6.2f}…{y1:6.2f}  深 {h:.1f} mm  "
+              f"最小间距 {g:5.2f} mm（{worst}）", flush=True)
+
+    # ---- 亚克力面板规格（嘉立创面板下单 + 自检：开孔必须对得上顶盖）---------
+    log("\n========== 亚克力面板（output/Panel.dxf）==========")
+    pw = L.out_w - 2 * (RIM_W + PANEL_GAP)
+    ph = L.out_d - 2 * (RIM_W + PANEL_GAP)
+    pr = max(L.out_r - RIM_W - PANEL_GAP, 0.5)
+    print(f"  外形 {pw:.2f} × {ph:.2f} mm  R{pr:.2f}  "
+          f"厚 {PANEL_T:.1f} mm + 背胶 {PANEL_TAPE:.1f} mm（贴完与边框齐平）", flush=True)
+    print(f"  开孔 3 × 键窗 {KEY_WIN + 2 * PANEL_KEY_PAD:.1f}×{KEY_WIN + 2 * PANEL_KEY_PAD:.1f}"
+          f" R{KEY_WIN_R + PANEL_KEY_PAD:.1f}   旋钮 Ø{PANEL_KNOB_CUT:.1f}"
+          f"   导光 Ø{PANEL_LED_CUT:.1f}", flush=True)
+    for k in m.keys:
+        x, y = L.XY(*k["center"])
+        print(f"    键窗中心 ({x:6.2f}, {y:6.2f})", flush=True)
+    print(f"    旋钮中心 ({ex:6.2f}, {ey:6.2f})   导光中心 ({lx:6.2f}, {ly:6.2f})",
+          flush=True)
+    good = (PANEL_KNOB_CUT >= KNOB_RECESS_D and PANEL_LED_CUT >= LED_EXIT_D
+            and PANEL_KEY_PAD > 0)
+    ok &= good
+    print(f"  {'✓' if good else '✗'} 面板开孔 ≥ 顶盖开口（旋钮 Ø{KNOB_RECESS_D:.1f} / "
+          f"导光 Ø{LED_EXIT_D:.1f} / 键窗 {KEY_WIN:.1f}）", flush=True)
 
     # ---- Type-C 插头通路自检：8.25 × 2.4 的插头外壳必须能从开口插到座腔 ----
     # 这不是“尺寸对不对”的校验，而是直接把插头包络放进模型里求交：
@@ -577,7 +826,8 @@ def main():
 
     log(f"\n  Base 体积 {base.volume:9.1f} mm³")
     print(f"  Lid  体积 {lid.volume:9.1f} mm³")
-    print(f"  外壳外形 {L.out_w:.3f} × {L.out_d:.3f} × {Z_TOP:.2f} mm")
+    print(f"  外壳外形 {L.out_w:.3f} × {L.out_d:.3f} × {Z_RIM_TOP:.2f} mm"
+          f"（底座 {Z_LID_BOT:.2f} + 顶板 {LID_T:.1f} + 边框 {RIM_H:.1f}）")
     print(f"  内腔     {L.cav[2] - L.cav[0]:.3f} × {L.cav[3] - L.cav[1]:.3f} mm"
           f" R{L.cav_r:.3f}")
     log("\n导出:")

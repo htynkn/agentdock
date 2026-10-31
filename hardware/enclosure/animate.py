@@ -92,14 +92,22 @@ def shade(verts, rgb):
 ORANGE = (0.96, 0.47, 0.16)
 BLUE = (0.25, 0.46, 0.72)
 GREEN = (0.15, 0.55, 0.30)
+GLASS = (0.70, 0.78, 0.88)
 
 print("载入 STL ...")
 base = load_stl(OUT / "Base_lowres.stl")
 lid = load_stl(OUT / "Lid_lowres.stl")
+panel = load_stl(OUT / "Panel_lowres.stl") if (OUT / "Panel_lowres.stl").exists() else None
 pcb = load_stl(OUT / "PCB_world.stl", min_area=0.05)
 
-# 关键 Z：PCB 装配位 5.0（世界）；Lid 底 18.5；爆炸起点再抬 45
-Z_PCB, Z_LID = 5.0, 18.5
+# PCB_world.stl 是 PCB 局部坐标；Base / Lid / Panel 的 STL 已经是最终装配位置
+# （世界坐标），所以只有 PCB 需要加平移。平移量从 pcb_report.json 算，不硬编码。
+import json
+import sys as _sys
+_sys.path.insert(0, str(HERE))
+from enclosure import CLEAR, WALL, Z_PCB_BOT   # noqa: E402
+_bb = json.loads((OUT / "pcb_report.json").read_text())["board"]["bbox"]
+DX, DY, Z_PCB = WALL + CLEAR - _bb[0], WALL + CLEAR - _bb[1], Z_PCB_BOT
 
 # 帧脚本：(进度 t∈[0,1]) -> (pcb_z_offset, lid_z_offset, 角度)
 FPS = 30
@@ -135,7 +143,7 @@ ax.view_init(elev=22, azim=0)
 ax.set_proj_type("persp")
 
 # 固定视野（装配体世界包围盒 + 爆炸余量）
-cx, cy, cz = 48.09, 23.59, 40
+cx, cy, cz = 48.59, 24.09, 42
 r = 62
 ax.set_xlim(cx - r, cx + r); ax.set_ylim(cy - r, cy + r); ax.set_zlim(cz - r, cz + r)
 ax.set_box_aspect((1, 1, 1))
@@ -143,9 +151,11 @@ ax.set_box_aspect((1, 1, 1))
 for i, (dz_p, dz_l, ang) in enumerate(frames):
     parts = [
         (rot_z(base, ang), ORANGE),
-        (rot_z(pcb + np.array([0, 0, Z_PCB + dz_p]), ang), GREEN),
-        (rot_z(lid + np.array([0, 0, Z_LID + dz_l]), ang), BLUE),
+        (rot_z(pcb + np.array([DX, DY, Z_PCB + dz_p]), ang), GREEN),
+        (rot_z(lid + np.array([0, 0, dz_l]), ang), BLUE),
     ]
+    if panel is not None:
+        parts.append((rot_z(panel + np.array([0, 0, dz_l]), ang), GLASS))
     faces, cols = [], []
     for verts, rgb in parts:
         faces.append(verts)
