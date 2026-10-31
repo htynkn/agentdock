@@ -39,13 +39,14 @@ Two printed parts + one glued panel, **no supports needed**:
   from below, wall openings (USB-C, toggle switch, buzzer ports, ESP32 antenna
   vents). The PCB sits in a cavity with **1.0 mm clearance per side**, so it can
   be nudged left/right until the four holes line up before driving the screws.
-* **Lid** — 2.0 mm top plate carried by a 1.7 mm raised rim (which is also the
+* **Lid** — 2.0 mm top plate carried by a 1.8 mm raised rim (which is also the
   acrylic panel seat), 3.0 mm locating lip (notched at the four posts), 4 posts
   with glued knurled nuts (**Ø3.8 bore from the post foot → cavity ceiling**, so
   the Ø3.5 nut can actually be pushed in), 3 key windows (19 × 19), Ø13.6 knob
   recess + Ø8.6 shaft hole, WS2812 light port as a **stepped** counterbore
   (Ø8 → Ø5.2 → Ø3.4), and four stiffening ribs under the plate.
-* **Panel** — 1.5 mm acrylic/PC + 0.2 mm adhesive tape, glued into the rim; its
+* **Panel** — 1.5 mm printed acrylic/PC + 0.16 mm adhesive tape (Crown #513), glued
+  into the rim 0.14 mm below the rim top; its
   cut-outs (3 key windows, knob, light port) are derived from the same
   parameters, so `output/Panel.dxf` is always in sync with the printed lid.
 
@@ -58,7 +59,7 @@ build itself:
 |---|---|---|
 | Screw holes did not line up — only half of each PCB hole visible | The PCB had ±0.5 mm of play in the cavity, but the Ø2.7 pass-hole around a Ø2.5 screw only allows ±0.1, and FDM shrink over the 86 mm hole pattern is ≈0.34 mm | Cavity clearance 0.5 → **1.0 mm**; pass-hole Ø2.7 → **Ø3.4** (±0.45); head counterbore Ø4.8 → **Ø6.0** (±0.70) + 45° lead-in cone; bosses Ø6 → **Ø8** to keep 1.0 mm of wall around the bigger counterbore |
 | Lid felt floppy | Three 19 × 19 key windows split the plate into 1.64 mm strips that were only 1.6 mm thick | Plate 1.6 → **2.0 mm**; 4 mm deep ribs under the two inter-window strips (and one across the free band above them); lip 1.5 → **3.0 mm**; 1.7 mm raised rim around the top edge |
-| No place for the acrylic panel | — | Rim around the top face: the panel drops inside it and ends up **flush** with the rim |
+| No place for the acrylic panel | — | Rim around the top face: the panel drops inside it and ends up 0.14 mm **below** the rim top, so the rim guards the printed face |
 
 Bending stiffness of the inter-window strips (the part that made the lid feel
 soft): 1.64 × 2.0 mm flat strip ≈ 1.1 mm⁴ → T-section (1.64 × 2.0 plate + a
@@ -94,7 +95,7 @@ Key dimensions (derived from the PCB STEP at load time — not hard-coded):
 
 | Item | Value |
 |---|---|
-| Outer size | 97.175 × 48.175 × 22.20 mm (base 18.50 + lid plate 2.0 + rim 1.7) |
+| Outer size | 97.175 × 48.175 × 22.30 mm (base 18.50 + lid plate 2.0 + rim 1.8) |
 | Cavity | 93.975 × 44.975 mm, R3.987; PCB clearance 1.0 mm per side |
 | PCB | 91.975 × 42.975 × 1.586 mm, corners R2.987 |
 | PCB standing height | bottom face at z = 5.0 (3.4 mm above the floor; lowest solder tips still clear the floor by 1.49 mm) |
@@ -103,7 +104,7 @@ Key dimensions (derived from the PCB STEP at load time — not hard-coded):
 | Key windows | 3 × 19 × 19 mm centered on the key stems |
 | Encoder | PCB local (79.375, 31.746) — the 2026-10-27 PCB moved it 1.53 mm left of the previous (80.90, 31.75); all lid features follow the STEP, nothing is hard-coded |
 | Encoder hole | Ø8.6 through + Ø13.6 × 0.8 knob skirt recess, concentric with the EC11 bushing (0.00 mm offset; Ø8.6 leaves 0.8 mm around the Ø7 bushing so hole shrink from printing cannot jam it) |
-| Lid stiffening | 2.0 mm plate + 2 ribs (1.0 × 4.0) under the inter-window strips + 1 rib (1.2 × 4.0) across the free band at PCB-local y = 24.5 + 3.0 mm lip + 2.6 × 1.7 mm rim |
+| Lid stiffening | 2.0 mm plate + 2 ribs (1.0 × 4.0) under the inter-window strips + 1 rib (1.2 × 4.0) across the free band at PCB-local y = 24.5 + 3.0 mm lip + 2.6 × 1.8 mm rim |
 | Min wall thickness | 0.86 mm (Base) / 0.80 mm (Lid), zero area below 0.5 mm |
 | USB-C panel opening | 9.60 × 3.86 mm, **centered on the plug cavity** |
 | PCB hole pattern | 86.0 × 37.0 mm, symmetric about (44.65, 21.50) while the board is centered at (46.00, 21.50) → the pattern sits 1.35 mm left of the board centre |
@@ -115,12 +116,13 @@ upload it as the panel outline + cut-outs and pick:
 
 | Item | Value |
 |---|---|
-| Material | acrylic / PC, **1.5 mm** thick (1.0 mm also works: set `PANEL_T = 1.0`, the rim drops by 0.5) |
+| Material | acrylic / PC, **1.5 mm** thick, printed on the back (1.0 mm also works: set `PANEL_T = 1.0`, `RIM_H` auto-drops to 1.20) |
 | Outline | **91.67 × 42.67 mm**, corners R2.84 |
 | Cut-outs | 3 × key window **19.2 × 19.2** R2.1, knob **Ø13.8**, light port **Ø3.6** |
-| Attachment | 0.2 mm 3M double-sided tape on the back (the build reserves `PANEL_TAPE`), glued into the rim |
+| Attachment | 0.16 mm Crown **#513** white-translucent PET double-sided tape on the back (long-term 80 °C, `PANEL_TAPE`), glued into the rim |
 
-The panel sits **inside** the 2.6 mm wide rim and ends up flush with it; the rim
+The panel sits **inside** the 2.6 mm wide rim and ends up 0.14 mm below the rim
+top (`RIM_H` = panel stack rounded up to whole 0.2 mm layers); the rim
 locates it (0.15 mm per side), hides its edges and protects it from knocks. All
 cut-outs derive from the enclosure parameters, and the build asserts every panel
 opening is ≥ the corresponding lid opening, so the panel can never cover a
@@ -140,7 +142,7 @@ change — lives in **[enclosure/PANEL.md](enclosure/PANEL.md)**.
 | Pan-head screw | **M2.5 × 8** (head Ø4.6 × 1.9) | 4 |
 | Knurled brass nut | **M2.5, L4.0, Ø3.5 OD** (LCSC C51938993 or equivalent) | 4 |
 | Adhesive | AB (two-part epoxy) | — |
-| Panel tape | 3M 300LSE class, 0.2 mm | — |
+| Panel tape | Crown #513 white-translucent PET, 0.16 mm | — |
 
 ```
 z = 0      base floor (screw head sunk: Ø6.0 × 2.2 counterbore)
@@ -281,7 +283,7 @@ git-ignored.
    centre, which also drags the PCB into place. Tighten evenly (the board is
    clamped between the boss tops and the post feet, so it no longer moves).
 5. Peel the tape and press the acrylic panel into the rim; it drops into the
-   frame and finishes flush with the top surface. Feed the knob through the
+   frame and sits 0.14 mm below the rim top. Feed the knob through the
    Ø13.8 panel hole onto the EC11 shaft last.
 
 ## CI

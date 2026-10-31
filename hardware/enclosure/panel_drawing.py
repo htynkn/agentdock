@@ -24,7 +24,7 @@ from matplotlib.patches import Circle, FancyBboxPatch
 from enclosure import (
     CLEAR, KEY_WIN, KEY_WIN_R, LED_PORT_D0, LED_PORT_SHIFT, KNOB_HOLE_D,
     KNOB_RECESS_D, PANEL_GAP, PANEL_KEY_PAD, PANEL_KNOB_CUT, PANEL_LED_CUT,
-    PANEL_T, PANEL_TAPE, RIM_W, WALL,
+    PANEL_RECESS, PANEL_STACK, PANEL_T, PANEL_TAPE, RIM_H, RIM_W, WALL,
 )
 
 HERE = Path(__file__).resolve().parent
@@ -128,7 +128,9 @@ def main() -> None:
             fontsize=10.5, color="#555")
     ax.text(W / 2, -21.5,
             f"亚克力面板 {W:.2f} × {H:.2f} × {PANEL_T:.1f} mm"
-            f"（另加 {PANEL_TAPE:.1f} mm 背胶）  ·  外圆角 R{R:.2f}  ·  5 处开孔",
+            f"（另加 {PANEL_TAPE:.2f} mm 背胶 = {PANEL_STACK:.2f} mm，"
+            f"边框 {RIM_H:.2f} mm ⇒ 沉入 {PANEL_RECESS:.2f} mm）"
+            f"  ·  外圆角 R{R:.2f}  ·  5 处开孔",
             ha="center", fontsize=12.5, color="#123")
     ax.text(W / 2, -26.0,
             f"顶盖对应开口：键窗 {KEY_WIN:.1f}×{KEY_WIN:.1f} R{KEY_WIN_R:.1f}"
