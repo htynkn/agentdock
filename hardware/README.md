@@ -20,6 +20,8 @@ hardware/
 │   │                        + tolerance-budget self-checks
 │   ├── render.py            matplotlib preview renders (6 views)
 │   ├── panel_drawing.py     dimensioned drawing of the acrylic panel (ordering)
+│   ├── PANEL.md             panel ordering guide (JLC panel): file, parameters,
+│   │                        dimensions, red lines, silkscreen notes
 │   ├── thickness_check.py   STL wall-thickness probe (ray casting) — reproduces
 │   │                        the online "thin wall" warning and locates it
 │   ├── output/              Generated: STEP/STL/DXF + pcb_report.json (git-ignored)
@@ -127,7 +129,9 @@ through the panel holes.
 
 `uv run panel_drawing.py` renders `render/panel_drawing.png`, a dimensioned
 drawing (measured from the panel's own lower-left corner) for checking the order
-before submitting it:
+before submitting it. The full ordering guide — what to upload, which JLC
+parameters to pick, the dimension table and the three things that must not
+change — lives in **[enclosure/PANEL.md](enclosure/PANEL.md)**.
 
 ### Fasteners (hidden, screws from the bottom)
 

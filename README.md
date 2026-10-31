@@ -15,7 +15,9 @@ key press, and the buzzer can be muted persistently.
 
 The repository contains the **firmware**, the **pi extension**, and the
 **hardware** design files for the enclosure (parametric build123d model of the
-base + lid, ready for 3D printing — see [hardware/README.md](hardware/README.md)).
+base + lid plus the acrylic front panel, ready for 3D printing — see
+[hardware/README.md](hardware/README.md), panel ordering in
+[hardware/enclosure/PANEL.md](hardware/enclosure/PANEL.md)).
 
 ---
 
