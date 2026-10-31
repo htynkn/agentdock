@@ -1,0 +1,40 @@
+hardware/enclosure/panel_drawing.py
+  s_0c5acd0ce62332::t_70606aa8ebf5be 54-55,76-85
+.github/workflows/hardware.yml
+  s_0c5acd0ce62332::t_45bde9c656314c 65-67,94-97
+hardware/enclosure/PANEL.md
+  s_0c5acd0ce62332::t_501f447a053cc3 14,23-25,27,41,74,76-118,141-142
+hardware/enclosure/panel_print.py
+  s_0c5acd0ce62332::t_a854b7d5307dfc 93,343
+  s_0c5acd0ce62332::t_0d9a7fd1bfc36f 94-96,321,330-342
+  s_0c5acd0ce62332::t_0feecb5e272d7e 382
+  s_0c5acd0ce62332::t_44ca4605596213 1-36,38-67,69-83,86-87,90-91,97,99-120,122-200,216-230,235,241-277,282,284-285,290-320,322-329,349,352-381,386-440,442-443,445,448-453,457-458,474,476,478,481,483,485-486,516-517,520-534,536-559,561-589
+  s_0c5acd0ce62332::t_abc247c4f92f12 84-85,447,504-511,514-515,518-519,560
+  s_0c5acd0ce62332::t_cc8276bbacca13 201-215,278-281,286-289,383-385
+  s_0c5acd0ce62332::t_cb587ff598e63f 37,441,444,454-456,459-473,475,477,479-480,482,484,487-503,512-513
+  s_0c5acd0ce62332::t_a1eba011099ce5 68,231-234,236-240,535
+  s_0c5acd0ce62332::t_9c271eb12b8e6d 88-89,283
+  s_0c5acd0ce62332::t_ed37e20fa227d3 98,344,347-348,350-351
+  s_0c5acd0ce62332::t_9dac61c80089b6 446
+  s_0c5acd0ce62332::t_c14a1d8fb41d05 92,345-346
+  s_0c5acd0ce62332::t_39cb8211a01614 121
+hardware/README.md
+  s_0c5acd0ce62332::t_aa42a725bd533f 23-24,140-157,237,241-243
+  s_0c5acd0ce62332::t_6d08974b2c8da7 318-319
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "430befd7301efd0d4ca8e55410475891ca851c29",
+  "prompts": {},
+  "sessions": {
+    "s_0c5acd0ce62332": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a19212-bea1-7675-b904-a678348ea9b4",
+        "model": "deepseek-flash"
+      },
+      "human_author": "htynkn <htynkn@gmail.com>"
+    }
+  }
+}
