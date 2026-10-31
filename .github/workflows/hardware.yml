@@ -86,6 +86,8 @@ jobs:
             hardware/enclosure/output/Lid.stl
             hardware/enclosure/output/Base.step
             hardware/enclosure/output/Lid.step
+            hardware/enclosure/output/Panel.stl
+            hardware/enclosure/output/Panel.dxf
             hardware/enclosure/render/*.png
             hardware/enclosure/render/assembly.mp4
             hardware/enclosure/render/assembly.gif
