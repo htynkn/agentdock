@@ -1,0 +1,23 @@
+hardware/README.md
+  s_f94a88af6ec58a::t_03fd08de28475c 23-24,132-134
+hardware/enclosure/PANEL.md
+  s_f94a88af6ec58a::t_bfcd9a176a668c 1-99
+README.md
+  s_f94a88af6ec58a::t_33a4601bba7ee8 18-20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "301a977406d43cb06e540c6f2971309afa8b7331",
+  "prompts": {},
+  "sessions": {
+    "s_f94a88af6ec58a": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1915f-318f-762e-8811-b246257c759e",
+        "model": "deepseek-flash"
+      },
+      "human_author": "htynkn <htynkn@gmail.com>"
+    }
+  }
+}
