@@ -1,0 +1,23 @@
+hardware/enclosure/panel_drawing.py
+  s_f94a88af6ec58a::t_7cdbfb5ca260a8 1-107,110-111,115-116,120-128,130-132,134-137,140-150
+  s_f94a88af6ec58a::t_bade93792cedbb 129,133,139
+  s_f94a88af6ec58a::t_02c816a3a4434b 108-109,112-114,117-119,138
+hardware/README.md
+  s_f94a88af6ec58a::t_663ce6a1076ac0 22,128-131,210
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "97f7fdc1de4175b9e73fe80005120a498d3ad8b2",
+  "prompts": {},
+  "sessions": {
+    "s_f94a88af6ec58a": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1915f-318f-762e-8811-b246257c759e",
+        "model": "deepseek-flash"
+      },
+      "human_author": "htynkn <htynkn@gmail.com>"
+    }
+  }
+}
