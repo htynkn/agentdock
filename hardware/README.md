@@ -231,6 +231,13 @@ plug path, wall thickness and topology.
 
 ### After a PCB revision
 
+**Currently pinned: 2026-10-31 export** (`hardware/pcb/PCB.step`, SHA-256
+`32271557391e1d…`). It differs from the 2026-10-27 revision by exactly one
+solid: a 3.2 × 1.6 × 1.3 mm SMD at X 21.73–23.33 moved 0.635 mm down in Y
+(31.03–34.23 → 30.40–33.60). No anchor in `EXPECT` moved, `PCB ∩ Base` and
+`PCB ∩ Lid` are still 0.0000 mm³, and the regenerated Base/Lid/Panel STLs are
+byte-identical — the enclosure needs no change.
+
 1. Re-export the STEP from EasyEDA Pro and save it as `hardware/pcb/PCB.step`
    (dated exports may live alongside; only `PCB.step` is tracked).
 2. Update the SHA-256 pin in `.github/workflows/hardware.yml`.
