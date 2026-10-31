@@ -19,6 +19,7 @@ hardware/
 │   │                        + panel DXF, runs dimensional + interference
 │   │                        + tolerance-budget self-checks
 │   ├── render.py            matplotlib preview renders (6 views)
+│   ├── panel_drawing.py     dimensioned drawing of the acrylic panel (ordering)
 │   ├── thickness_check.py   STL wall-thickness probe (ray casting) — reproduces
 │   │                        the online "thin wall" warning and locates it
 │   ├── output/              Generated: STEP/STL/DXF + pcb_report.json (git-ignored)
@@ -124,6 +125,10 @@ opening is ≥ the corresponding lid opening, so the panel can never cover a
 window. The lid's knob pocket (Ø13.6 × 0.8) and the light port stay visible
 through the panel holes.
 
+`uv run panel_drawing.py` renders `render/panel_drawing.png`, a dimensioned
+drawing (measured from the panel's own lower-left corner) for checking the order
+before submitting it:
+
 ### Fasteners (hidden, screws from the bottom)
 
 | Part | Spec | Qty |
@@ -202,6 +207,7 @@ uv run enclosure.py         # model + export STEP/STL + self-checks
 uv run thickness_check.py output/Lid.stl --min 0.5   # locate thin walls
 uv run thickness_check.py output/Base.stl --min 0.5 --top 8
 uv run render.py            # PNG previews into render/
+uv run panel_drawing.py     # dimensioned panel drawing for the JLC order
 ```
 
 Generated files: `Base.step/.stl`, `Lid.step/.stl`, `Panel.stl`,
