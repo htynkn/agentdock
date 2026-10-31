@@ -1,0 +1,43 @@
+hardware/enclosure/enclosure.py
+  s_f94a88af6ec58a::t_910b18815d0b18 266-271,323,325-326,331-332
+  s_f94a88af6ec58a::t_03a73165548419 60-67,73-97,100-104,115-126,129-130,193-196,198
+  s_f94a88af6ec58a::t_390614a8422138 529-535,603,606-617,670,685-708,713,719,722,751
+  s_f94a88af6ec58a::t_83b7b2a11b4fa8 128,131-135,148-150,197,199-201,403,442,452,725-726,728,730-731,734,736-741
+  s_f94a88af6ec58a::t_ebe7863106898e 420-424,426-431,446-447,480-495,499-526
+  s_f94a88af6ec58a::t_9ccca7d0e5dc19 709-712,718,720-721,723-724,727,729,732-733,735,742-750,752-754
+  s_f94a88af6ec58a::t_f384ded7332bf6 756-776
+  s_f94a88af6ec58a::t_fe0f96fa8ae749 42-43,550-554,559,571-575
+  s_f94a88af6ec58a::t_e383cd961d4300 99,714-717
+  s_f94a88af6ec58a::t_a9aa842416ba56 98,107
+  s_f94a88af6ec58a::t_4b1ce019632b2d 10-26,829-830
+  s_f94a88af6ec58a::t_a59adc370c44e4 527-528
+  s_f94a88af6ec58a::t_e8235d543cb152 755
+hardware/enclosure/render.py
+  s_f94a88af6ec58a::t_e4b5da20e7ed7b 15-25,125-126,131,134-135,138-139,141,145-146,151,153-154
+  s_f94a88af6ec58a::t_7a858380a9eb13 147-148
+hardware/README.md
+  s_f94a88af6ec58a::t_7e7f0dddb6d7ef 102-104,108-126,134,137-138,165-173,175-177
+  s_f94a88af6ec58a::t_c6dbe0ec75806d 207-209,211-220,241-247,256-260,262-268,275-276
+  s_f94a88af6ec58a::t_5ba91837e4cebf 4
+  s_f94a88af6ec58a::t_ead7f2e926b524 5-7,18-21,24,27,32,34,37-42,44-78,88,94-95
+hardware/enclosure/animate.py
+  s_f94a88af6ec58a::t_55458d4a6c15fc 95,100,103-110,146,154-155,157-158
+.github/workflows/hardware.yml
+  s_f94a88af6ec58a::t_07a22fda3c6f8e 89-90
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "85a6ee0f45848c7c68f788dde4df532269e7a444",
+  "prompts": {},
+  "sessions": {
+    "s_f94a88af6ec58a": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1915f-318f-762e-8811-b246257c759e",
+        "model": "deepseek-flash"
+      },
+      "human_author": "htynkn <htynkn@gmail.com>"
+    }
+  }
+}
