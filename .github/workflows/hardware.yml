@@ -48,7 +48,7 @@ jobs:
       - name: Verify PCB STEP integrity
         working-directory: hardware
         env:
-          PCB_SHA256: c2cc452744ae988aec39adde3026fe6c27d1a8bc326765c132a1ed0825038f39
+          PCB_SHA256: 32271557391e1dfd51a6d95a70fe3ef74457ed9a212ae8ac7b7a40bb20917ce6
         run: |
           echo "$PCB_SHA256  pcb/PCB.step" | sha256sum --check
           # PCB.step 被改版时：更新此哈希 + pcb_model.py 的 EXPECT 表
@@ -61,6 +61,9 @@ jobs:
 
       - name: Render previews
         run: uv run render.py
+
+      - name: Render panel print artwork
+        run: uv run panel_print.py
 
       - name: Render assembly animation
         run: uv run animate.py
@@ -88,6 +91,10 @@ jobs:
             hardware/enclosure/output/Lid.step
             hardware/enclosure/output/Panel.stl
             hardware/enclosure/output/Panel.dxf
+            hardware/enclosure/output/Panel_print_front.pdf
+            hardware/enclosure/output/Panel_print_front.svg
+            hardware/enclosure/output/Panel_print_back.pdf
+            hardware/enclosure/output/Panel_print_back.svg
             hardware/enclosure/render/*.png
             hardware/enclosure/render/assembly.mp4
             hardware/enclosure/render/assembly.gif

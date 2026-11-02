@@ -24,7 +24,7 @@ from matplotlib.patches import Circle, FancyBboxPatch
 from enclosure import (
     CLEAR, KEY_WIN, KEY_WIN_R, LED_PORT_D0, LED_PORT_SHIFT, KNOB_HOLE_D,
     KNOB_RECESS_D, PANEL_GAP, PANEL_KEY_PAD, PANEL_KNOB_CUT, PANEL_LED_CUT,
-    PANEL_T, PANEL_TAPE, RIM_W, WALL,
+    PANEL_RECESS, PANEL_STACK, PANEL_T, PANEL_TAPE, RIM_H, RIM_W, WALL,
 )
 
 HERE = Path(__file__).resolve().parent
@@ -51,8 +51,8 @@ def setup_cjk() -> None:
             continue
 
 
-def main() -> None:
-    setup_cjk()
+def panel_layout() -> dict:
+    """面板几何（面板自身左下角为原点），panel_print.py 共用同一份推导。"""
     rep = json.loads((OUT / "pcb_report.json").read_text())
     bb = rep["board"]["bbox"]
     dx, dy = WALL + CLEAR - bb[0], WALL + CLEAR - bb[1]     # PCB 局部 → 外壳
@@ -63,7 +63,6 @@ def main() -> None:
     px0 = py0 = RIM_W + PANEL_GAP
     W = out_w - 2 * px0
     H = out_d - 2 * py0
-    R = out_w / 2 - 0  # 占位，下面用真实外圆角
     R = (rep["board"]["corner_radius"] + CLEAR + WALL) - RIM_W - PANEL_GAP
 
     kw = KEY_WIN + 2 * PANEL_KEY_PAD
@@ -74,6 +73,16 @@ def main() -> None:
     led_bb = rep["parts"]["led"]
     led = ((led_bb[0] + led_bb[3]) / 2 + dx - px0,
            (led_bb[1] + led_bb[4]) / 2 + LED_PORT_SHIFT + dy - py0)
+    return dict(W=W, H=H, R=R, key_win=kw, key_r=kr, keys=keys, knob=knob, led=led,
+                knob_d=PANEL_KNOB_CUT, led_d=PANEL_LED_CUT, rep=rep)
+
+
+def main() -> None:
+    setup_cjk()
+    G = panel_layout()
+    rep = G["rep"]
+    W, H, R = G["W"], G["H"], G["R"]
+    kw, kr, keys, knob, led = G["key_win"], G["key_r"], G["keys"], G["knob"], G["led"]
 
     fig, ax = plt.subplots(figsize=(13.5, 7.6), dpi=160)
     ax.set_aspect("equal")
@@ -128,7 +137,9 @@ def main() -> None:
             fontsize=10.5, color="#555")
     ax.text(W / 2, -21.5,
             f"亚克力面板 {W:.2f} × {H:.2f} × {PANEL_T:.1f} mm"
-            f"（另加 {PANEL_TAPE:.1f} mm 背胶）  ·  外圆角 R{R:.2f}  ·  5 处开孔",
+            f"（另加 {PANEL_TAPE:.2f} mm 背胶 = {PANEL_STACK:.2f} mm，"
+            f"边框 {RIM_H:.2f} mm ⇒ 沉入 {PANEL_RECESS:.2f} mm）"
+            f"  ·  外圆角 R{R:.2f}  ·  5 处开孔",
             ha="center", fontsize=12.5, color="#123")
     ax.text(W / 2, -26.0,
             f"顶盖对应开口：键窗 {KEY_WIN:.1f}×{KEY_WIN:.1f} R{KEY_WIN_R:.1f}"

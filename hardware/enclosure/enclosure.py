@@ -34,6 +34,7 @@
 from __future__ import annotations
 
 import json
+import math
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -74,13 +75,19 @@ Z_TOP = Z_LID_BOT + LID_T     # 顶板上表面 = 20.50
 
 # --- 顶板凸边框 / 亚克力面板安装口 ---------------------------------------
 # 顶部做成一圈 2.6 mm 宽的凸起边框，边框里面就是亚克力面板的位置：面板
-# 1.5 mm 厚 + 0.2 mm 背胶，贴上去正好与边框齐平，边框把面板四边包住（既定位
-# 又保护边缘，不会磕手）。边框同时是顶板四周的加强筋（见「顶盖加强」）。
+# 1.5 mm 厚 + 0.16 mm 背胶（皇冠 #513 白色半透明 PET 双面胶），边框把面板四边
+# 包住（既定位又保护边缘，不会磕手）。边框高度按 FDM 整层取整：面板顶面比边框
+# 低 0.14 mm，印刷面缩在边框里，平放/拿取都磨不到图案。
+# 边框同时是顶板四周的加强筋（见「顶盖加强」）。
 RIM_W = 2.6                   # 边框宽度（= 面板到外壳外缘的 inset）
-PANEL_T = 1.5                 # 亚克力/PC 面板厚度（嘉立创面板常用 1.5）
-PANEL_TAPE = 0.2              # 背胶（3M 双面胶）厚度
-RIM_H = PANEL_T + PANEL_TAPE  # 边框高度 = 面板 + 背胶，贴完齐平 = 1.7
-Z_RIM_TOP = Z_TOP + RIM_H     # 边框上表面 = 22.20
+PANEL_T = 1.5                 # 面板材料厚度（嘉立创面板：1.5 mm 亚克力/PC 板）
+PANEL_TAPE = 0.16             # 背胶厚度：皇冠 #513（白色半透明，粘性强，
+                              # 长期耐温 80 ℃）实测 0.16（旧版按 3M 胶 0.2 预留）
+PANEL_STACK = PANEL_T + PANEL_TAPE            # 面板 + 胶层 = 1.66
+LAYER_H = 0.20                # FDM 层高：边框按整层打印，所以高度要取整层数
+RIM_H = math.ceil(PANEL_STACK / LAYER_H) * LAYER_H   # = 1.80（9 层）
+Z_RIM_TOP = Z_TOP + RIM_H     # 边框上表面 = 22.30
+PANEL_RECESS = RIM_H - PANEL_STACK            # 面板顶面低于边框 = 0.14
 PANEL_GAP = 0.15               # 面板与边框内壁的单边间隙
 PANEL_KEY_PAD = 0.10          # 面板键窗比顶盖键窗单边放大（面板加工公差 ±0.1）
 PANEL_KNOB_CUT = 13.8         # 面板旋钮开孔（≥ 顶盖 Ø13.6 旋钮沉台）
@@ -418,7 +425,8 @@ def build_lid(L: Layout) -> "Part":
     z_nut = L.Z(nut_bottom_local(m))       # 四个螺母孔底面（外壳坐标，统一）
 
     # 5.1 顶板 + 四周凸边框（面板安装口）+ 一圈定位止口
-    #     凸边框：顶面外圈抬高 RIM_H = 面板 + 背胶，面板贴进去后与边框齐平，
+    #     凸边框：顶面外圈抬高 RIM_H（= 面板 + 背胶，向上取整到整层），面板贴
+    #     进去后顶面比边框低 PANEL_RECESS（0.14），边框把面板边缘和印刷面护住，
     #     边框同时是顶板四周的一圈加强梁。边框内壁就是面板的定位尺寸。
     #     止口在 4 根立柱周围开缺口：止口内壁离立柱外圆很近，直接相交会
     #     切出刀口状薄楔形；开缺口后止口只在四面直壁中段起定位作用。
@@ -607,7 +615,12 @@ def main():
     pbb = panel.bounding_box()
     chk("Panel X", pbb.size.X, L.out_w - 2 * (RIM_W + PANEL_GAP))
     chk("Panel Y", pbb.size.Y, L.out_d - 2 * (RIM_W + PANEL_GAP))
-    chk("Panel 顶面", pbb.max.Z, Z_RIM_TOP)          # 面板 + 背胶 ⇒ 与边框齐平
+    chk("Panel 顶面", pbb.max.Z, Z_TOP + PANEL_STACK)  # 面板 + 背胶 ⇒ 低于边框 0.14
+    good = 0.0 <= PANEL_RECESS <= LAYER_H
+    ok &= good
+    print(f"  {'✓' if good else '✗'} 面板沉入边框深度"
+          f"      {PANEL_RECESS:9.2f}  (要求 0 … {LAYER_H:.2f} mm，边框护住印刷面)",
+          flush=True)
     chk("Panel 实体数", len(panel.solids()), 1)
     v_panel = (panel & lid).volume                   # 面板与顶盖必须不相交
     good = v_panel < 0.01
@@ -759,7 +772,8 @@ def main():
     ph = L.out_d - 2 * (RIM_W + PANEL_GAP)
     pr = max(L.out_r - RIM_W - PANEL_GAP, 0.5)
     print(f"  外形 {pw:.2f} × {ph:.2f} mm  R{pr:.2f}  "
-          f"厚 {PANEL_T:.1f} mm + 背胶 {PANEL_TAPE:.1f} mm（贴完与边框齐平）", flush=True)
+          f"厚 {PANEL_T:.1f} mm + 背胶 {PANEL_TAPE:.2f} mm = {PANEL_STACK:.2f} mm"
+          f"（边框 {RIM_H:.2f} mm → 面板低于边框 {PANEL_RECESS:.2f} mm）", flush=True)
     print(f"  开孔 3 × 键窗 {KEY_WIN + 2 * PANEL_KEY_PAD:.1f}×{KEY_WIN + 2 * PANEL_KEY_PAD:.1f}"
           f" R{KEY_WIN_R + PANEL_KEY_PAD:.1f}   旋钮 Ø{PANEL_KNOB_CUT:.1f}"
           f"   导光 Ø{PANEL_LED_CUT:.1f}", flush=True)
