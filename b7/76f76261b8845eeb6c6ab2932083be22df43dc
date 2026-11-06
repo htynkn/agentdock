@@ -1,0 +1,19 @@
+hardware/enclosure/enclosure.py
+  s_1a891ba72f99e7::t_ae4c4b184cc8c3 183-187,191
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b776f76261b8845eeb6c6ab2932083be22df43dc",
+  "prompts": {},
+  "sessions": {
+    "s_1a891ba72f99e7": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1ae56-e88a-76a4-858b-32d3651fae3e",
+        "model": "deepseek-flash"
+      },
+      "human_author": "htynkn <htynkn@gmail.com>"
+    }
+  }
+}
