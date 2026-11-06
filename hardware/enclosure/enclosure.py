@@ -866,6 +866,17 @@ def main():
     print(f"  开孔 3 × 键窗 {KEY_WIN + 2 * PANEL_KEY_PAD:.1f}×{KEY_WIN + 2 * PANEL_KEY_PAD:.1f}"
           f" R{KEY_WIN_R + PANEL_KEY_PAD:.1f}   旋钮 Ø{PANEL_KNOB_CUT:.1f}"
           f"   导光 Ø{PANEL_LED_CUT:.1f}", flush=True)
+
+    # 与顶盖边框的配合：面板就是按「边框内圈 − 单边 PANEL_GAP」定的，圆角要
+    # 与内圈同心（同心偏移保持 0.15 均匀）。下单前就看这几行。
+    rim_w, rim_d = L.width - 2 * RIM_W, L.out_d - 2 * RIM_W
+    rim_r = L.out_r - RIM_W
+    g_x, g_y = (rim_w - pw) / 2, (rim_d - ph) / 2
+    good = (abs(g_x - PANEL_GAP) < 1e-6 and abs(g_y - PANEL_GAP) < 1e-6
+            and abs(rim_r - pr - PANEL_GAP) < 1e-6)
+    ok &= good
+    print(f"  {'✓' if good else '✗'} 与边框配合：内圈 {rim_w:.2f} × {rim_d:.2f} R{rim_r:.2f}"
+          f" → 四周单边 {g_x:.2f} / {g_y:.2f} / 圆角 {rim_r - pr:.2f}", flush=True)
     for k in m.keys:
         x, y = L.XY(*k["center"])
         print(f"    键窗中心 ({x:6.2f}, {y:6.2f})", flush=True)
