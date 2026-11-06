@@ -1,0 +1,30 @@
+hardware/enclosure/enclosure.py
+  s_1a891ba72f99e7::t_2b136df7153149 416,418-421,441-443,445,447-448
+  s_1a891ba72f99e7::t_e8a2dbb82b400a 220-221
+  s_1a891ba72f99e7::t_532e1137784555 191-194,362-363,365-366,370-374,422-424,914
+  s_1a891ba72f99e7::t_84038c86469468 19,21,407
+  s_1a891ba72f99e7::t_63b49e5efd1c51 896-897
+  s_1a891ba72f99e7::t_5dcd19fcce7074 343-361,364,367-369,375-376
+  s_1a891ba72f99e7::t_29dfcc2d688db3 206-216
+  s_1a891ba72f99e7::t_d5896f73a716a3 124,126-131,136,164-165,169-190,222-226
+  s_1a891ba72f99e7::t_a4801e6707959b 880-895,898-913,915-934
+hardware/README.md
+  s_1a891ba72f99e7::t_e76eabac6e33eb 189,268,274-278,322-325
+  s_1a891ba72f99e7::t_b47f70f5ea1a2d 71-88,97,113-114
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7935a885e64061c8c154507fa58d7b2a151094b5",
+  "prompts": {},
+  "sessions": {
+    "s_1a891ba72f99e7": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1ae56-e88a-76a4-858b-32d3651fae3e",
+        "model": "deepseek-flash"
+      },
+      "human_author": "htynkn <htynkn@gmail.com>"
+    }
+  }
+}
