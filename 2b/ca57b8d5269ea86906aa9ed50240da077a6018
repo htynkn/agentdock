@@ -1,0 +1,27 @@
+hardware/enclosure/enclosure.py
+  s_1a891ba72f99e7::t_2868070efd3fbd 62,69-79,290-292,305,400,451,522-524,527,605,608
+  s_1a891ba72f99e7::t_f42a0e83f273b5 691,696,705,860,987
+hardware/enclosure/panel_drawing.py
+  s_1a891ba72f99e7::t_fdf0bb372a4343 26-28,63-66
+hardware/README.md
+  s_1a891ba72f99e7::t_e26b230e39abe9 40-45,324-329
+  s_1a891ba72f99e7::t_b97778b68b04b1 84-85,116,123-124,127,145
+hardware/enclosure/PANEL.md
+  s_1a891ba72f99e7::t_3014a403e96d84 43,50-53,116
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2bca57b8d5269ea86906aa9ed50240da077a6018",
+  "prompts": {},
+  "sessions": {
+    "s_1a891ba72f99e7": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1ae56-e88a-76a4-858b-32d3651fae3e",
+        "model": "deepseek-flash"
+      },
+      "human_author": "htynkn <htynkn@gmail.com>"
+    }
+  }
+}
