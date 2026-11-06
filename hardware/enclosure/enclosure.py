@@ -59,13 +59,24 @@ def log(msg: str):
 # --- 壳体基本尺寸 ---------------------------------------------------------
 WALL = 1.6                    # 壁厚
 FLOOR = 1.6                   # 底板厚
-CLEAR = 1.0                   # 内腔与 PCB 板边的单边间隙
+CLEAR = 1.0                   # 内腔与 PCB 板边的单边间隙（右侧 / 上下）
                               # 0.5 → 1.0：首版打印件实测「螺丝孔对不齐，PCB 放上去只
                               # 露半个孔」。原因是 PCB 在腔里只有 ±0.5 的活动量，
                               # 而 Ø2.7 过孔相对 Ø2.5 螺杆只留 ±0.1，再加 FDM 收缩
                               # ≈0.4 %@86 mm ≈0.34 mm，必然错位。放大到 1.0 后：
                               # 装板时可以左右挪，先让 USB-C / 拨柄对齐侧壁开口，
                               # 再用加大的沉孔 + 导向锥吸收残余偏差（见 SCREW_*）。
+
+# --- 左侧再加宽 -----------------------------------------------------------
+# 第二版打样：左侧两根 Ø8 螺丝柱与左壁并在一起，Ø6 沉孔直接切进壁里，从底面
+# 看沉孔边缘就差一点贴到外表面；PCB 左侧紧固点也被壁面挤得很紧。
+# → 把**左壁整体往外退** LEFT_EXTRA（外形只在 -X 方向加宽，外形总宽 +LEFT_EXTRA）。
+#   凸台 / 筋 / 侧壁开口 / 面板开孔全部照旧（都从 PCB 坐标派生，不受影响），
+#   只有两处变化：
+#     * 左内壁到 PCB 左边重新变成 2.0 空当，沉孔不再与壁相交；
+#     * USB-C 插座相对外壳外表面缩进 1.0（插头仍能插到底，只是不再齐平）。
+#   代价：面板、顶盖、底板都宽 1.0，面板 DXF 需重新下单。
+LEFT_EXTRA = 1.0
 LID_T = 2.0                   # 顶板厚（1.6 → 2.0，见下方「顶盖加强」）
 
 # --- Z 向尺寸链 -----------------------------------------------------------
@@ -276,6 +287,9 @@ class Layout:
         self.dz = Z_PCB_BOT                # PCB 局部 Z → 外壳 Z
         self.out_w = (x1 - x0) + 2 * (WALL + CLEAR)
         self.out_d = (y1 - y0) + 2 * (WALL + CLEAR)
+        self.x0 = -LEFT_EXTRA              # 外形左边界（-X 方向加宽）
+        self.width = self.out_w - self.x0  # 外形总宽
+        self.cx = (self.x0 + self.out_w) / 2   # 外形 X 中心（边框 / 面板要用）
         self.cav_r = self.m.corner_radius + CLEAR
         self.out_r = self.cav_r + WALL
         self.z_pcb1 = self.dz + self.m.thickness
@@ -288,7 +302,7 @@ class Layout:
     # 内腔边界（外壳坐标）
     @property
     def cav(self):
-        return (WALL, WALL, self.out_w - WALL, self.out_d - WALL)
+        return (WALL - LEFT_EXTRA, WALL, self.out_w - WALL, self.out_d - WALL)
 
 
 # ===========================================================================
@@ -383,7 +397,7 @@ def build_base(L: Layout) -> "Part":
     cx0, cy0, cx1, cy1 = L.cav
 
     # 4.1 外壳：外形圆角矩形 → 挖内腔
-    base = plate(0, 0, L.out_w, L.out_d, 0, Z_LID_BOT, L.out_r)
+    base = plate(L.x0, 0, L.out_w, L.out_d, 0, Z_LID_BOT, L.out_r)
     base -= plate(cx0, cy0, cx1, cy1, FLOOR, Z_LID_BOT + 1.0, L.cav_r)
 
     # 4.2 四角螺丝凸台
@@ -434,7 +448,7 @@ def build_base(L: Layout) -> "Part":
     # --- USB-C（-X 端壁）：以「插头空腔」定位，而不是座体包围盒
     usb = m.parts["usb"]
     cv = m.parts["usb_cavity"]
-    base -= slot_x(-0.3, L.X(usb[3]) - 0.3,
+    base -= slot_x(L.x0 - 0.3, L.X(usb[3]) - 0.3,
                    L.Y((cv[1] + cv[4]) / 2), L.Z((cv[2] + cv[5]) / 2),
                    y_span=(cv[4] - cv[1]) + 2 * USB_WIN_PAD,
                    z_span=(cv[5] - cv[2]) + 2 * USB_WIN_PAD, r=USB_WIN_R)
@@ -505,12 +519,12 @@ def build_lid(L: Layout) -> "Part":
     #     边框同时是顶板四周的一圈加强梁。边框内壁就是面板的定位尺寸。
     #     止口在 4 根立柱周围开缺口：止口内壁离立柱外圆很近，直接相交会
     #     切出刀口状薄楔形；开缺口后止口只在四面直壁中段起定位作用。
-    lid = plate(0, 0, L.out_w, L.out_d, Z_LID_BOT, Z_TOP, L.out_r)
-    rim_sk = (RectangleRounded(L.out_w, L.out_d, L.out_r)
-              - RectangleRounded(L.out_w - 2 * RIM_W, L.out_d - 2 * RIM_W,
+    lid = plate(L.x0, 0, L.out_w, L.out_d, Z_LID_BOT, Z_TOP, L.out_r)
+    rim_sk = (RectangleRounded(L.width, L.out_d, L.out_r)
+              - RectangleRounded(L.width - 2 * RIM_W, L.out_d - 2 * RIM_W,
                                  max(L.out_r - RIM_W, 0.5)))
     # 往下多长 0.5 是为了和顶板重叠，避免共面布尔
-    lid += Pos(L.out_w / 2, L.out_d / 2, Z_TOP - 0.5) * extrude(rim_sk, RIM_H + 0.5)
+    lid += Pos(L.cx, L.out_d / 2, Z_TOP - 0.5) * extrude(rim_sk, RIM_H + 0.5)
 
     r_out = L.cav_r - LIP_GAP
     lip = plate(cx0 + LIP_GAP, cy0 + LIP_GAP, cx1 - LIP_GAP, cy1 - LIP_GAP,
@@ -588,10 +602,10 @@ def build_lid(L: Layout) -> "Part":
 #   * 旋钮 Ø13.8（露出顶盖 Ø13.6 旋钮沉台，旋钮裙边仍能沉下去）
 #   * 导光孔 Ø3.6（对准顶盖 Ø3.4 出光孔）
 def panel_sketch(L: Layout):
-    w = L.out_w - 2 * (RIM_W + PANEL_GAP)
+    w = L.width - 2 * (RIM_W + PANEL_GAP)
     h = L.out_d - 2 * (RIM_W + PANEL_GAP)
     r = max(L.out_r - RIM_W - PANEL_GAP, 0.5)
-    sk = Pos(L.out_w / 2, L.out_d / 2) * RectangleRounded(w, h, r)
+    sk = Pos(L.cx, L.out_d / 2) * RectangleRounded(w, h, r)
     for k in L.m.keys:
         x, y = L.XY(*k["center"])
         a = KEY_WIN + 2 * PANEL_KEY_PAD
@@ -674,12 +688,12 @@ def main():
         print(f"  {'✓' if good else '✗'} {name:22s} {got:9.3f}  (设计 {want:9.3f})", flush=True)
 
     bb = base.bounding_box()
-    chk("Base X", bb.size.X, L.out_w)
+    chk("Base X", bb.size.X, L.width)
     chk("Base Y", bb.size.Y, L.out_d)
     chk("Base Z", bb.max.Z, Z_LID_BOT)
     chk("Base 实体数", len(base.solids()), 1)
     bb = lid.bounding_box()
-    chk("Lid X", bb.size.X, L.out_w)
+    chk("Lid X", bb.size.X, L.width)
     chk("Lid Y", bb.size.Y, L.out_d)
     chk("Lid 最低柱脚", bb.min.Z, L.Z(min(
         contact_z_local(m, hx, hy) for hx, hy, _ in m.mount_holes)))
@@ -688,7 +702,7 @@ def main():
 
     # 亚克力面板：尺寸、贴上去是否与边框齐平、能否落在边框内圈
     pbb = panel.bounding_box()
-    chk("Panel X", pbb.size.X, L.out_w - 2 * (RIM_W + PANEL_GAP))
+    chk("Panel X", pbb.size.X, L.width - 2 * (RIM_W + PANEL_GAP))
     chk("Panel Y", pbb.size.Y, L.out_d - 2 * (RIM_W + PANEL_GAP))
     chk("Panel 顶面", pbb.max.Z, Z_TOP + PANEL_STACK)  # 面板 + 背胶 ⇒ 低于边框 0.14
     good = 0.0 <= PANEL_RECESS <= LAYER_H
@@ -843,7 +857,7 @@ def main():
 
     # ---- 亚克力面板规格（嘉立创面板下单 + 自检：开孔必须对得上顶盖）---------
     log("\n========== 亚克力面板（output/Panel.dxf）==========")
-    pw = L.out_w - 2 * (RIM_W + PANEL_GAP)
+    pw = L.width - 2 * (RIM_W + PANEL_GAP)
     ph = L.out_d - 2 * (RIM_W + PANEL_GAP)
     pr = max(L.out_r - RIM_W - PANEL_GAP, 0.5)
     print(f"  外形 {pw:.2f} × {ph:.2f} mm  R{pr:.2f}  "
@@ -970,7 +984,7 @@ def main():
 
     log(f"\n  Base 体积 {base.volume:9.1f} mm³")
     print(f"  Lid  体积 {lid.volume:9.1f} mm³")
-    print(f"  外壳外形 {L.out_w:.3f} × {L.out_d:.3f} × {Z_RIM_TOP:.2f} mm"
+    print(f"  外壳外形 {L.width:.3f} × {L.out_d:.3f} × {Z_RIM_TOP:.2f} mm"
           f"（底座 {Z_LID_BOT:.2f} + 顶板 {LID_T:.1f} + 边框 {RIM_H:.1f}）")
     print(f"  内腔     {L.cav[2] - L.cav[0]:.3f} × {L.cav[3] - L.cav[1]:.3f} mm"
           f" R{L.cav_r:.3f}")

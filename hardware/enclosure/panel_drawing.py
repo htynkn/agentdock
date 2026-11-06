@@ -23,8 +23,9 @@ from matplotlib.patches import Circle, FancyBboxPatch
 
 from enclosure import (
     CLEAR, KEY_WIN, KEY_WIN_R, LED_PORT_D0, LED_PORT_SHIFT, KNOB_HOLE_D,
-    KNOB_RECESS_D, PANEL_GAP, PANEL_KEY_PAD, PANEL_KNOB_CUT, PANEL_LED_CUT,
-    PANEL_RECESS, PANEL_STACK, PANEL_T, PANEL_TAPE, RIM_H, RIM_W, WALL,
+    KNOB_RECESS_D, LEFT_EXTRA, PANEL_GAP, PANEL_KEY_PAD, PANEL_KNOB_CUT,
+    PANEL_LED_CUT, PANEL_RECESS, PANEL_STACK, PANEL_T, PANEL_TAPE, RIM_H,
+    RIM_W, WALL,
 )
 
 HERE = Path(__file__).resolve().parent
@@ -59,9 +60,10 @@ def panel_layout() -> dict:
     out_w = bb[3] - bb[0] + 2 * (WALL + CLEAR)
     out_d = bb[4] - bb[1] + 2 * (WALL + CLEAR)
 
-    # 面板在外壳坐标里的左下角 = 边框内圈 + 单边间隙
-    px0 = py0 = RIM_W + PANEL_GAP
-    W = out_w - 2 * px0
+    # 面板在外壳坐标里的左下角 = 边框内圈 + 单边间隙（左壁已外移 LEFT_EXTRA）
+    px0 = RIM_W + PANEL_GAP - LEFT_EXTRA
+    py0 = RIM_W + PANEL_GAP
+    W = out_w + LEFT_EXTRA - 2 * (RIM_W + PANEL_GAP)
     H = out_d - 2 * py0
     R = (rep["board"]["corner_radius"] + CLEAR + WALL) - RIM_W - PANEL_GAP
 
