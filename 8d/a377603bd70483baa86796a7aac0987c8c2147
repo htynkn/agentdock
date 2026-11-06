@@ -1,0 +1,21 @@
+hardware/enclosure/enclosure.py
+  s_1a891ba72f99e7::t_ccf7a413c3c81c 869-879
+hardware/enclosure/PANEL.md
+  s_1a891ba72f99e7::t_88fceaeb4f397e 43,45
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8da377603bd70483baa86796a7aac0987c8c2147",
+  "prompts": {},
+  "sessions": {
+    "s_1a891ba72f99e7": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1ae56-e88a-76a4-858b-32d3651fae3e",
+        "model": "deepseek-flash"
+      },
+      "human_author": "htynkn <htynkn@gmail.com>"
+    }
+  }
+}
