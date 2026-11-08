@@ -62,7 +62,7 @@
     }
   },
   "dependencies": {
-    "@stoprocent/noble": "^1.9.4"
+    "@stoprocent/noble": "^2.8.0"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^1.4.0",
