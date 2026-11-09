@@ -37,10 +37,12 @@ hardware/
 Two printed parts + one glued panel, **no supports needed**:
 
 * **Base** — floor + walls, 4 × Ø8 screw bosses (the two right-hand ones get a
-  gusset to the +X wall), 5 longitudinal + 1 transverse rib supporting the PCB
-  from below, wall openings (USB-C, toggle switch, buzzer ports, ESP32 antenna
-  vents). The PCB sits in a cavity with **1.0 mm clearance per side**, so it can
-  be nudged left/right until the four holes line up before driving the screws.
+  gusset to the +X wall; the two left-hand ones stand clear of the left wall,
+  which sits `LEFT_EXTRA` = 1.0 mm further out), 4 longitudinal + 1 transverse
+  rib supporting the PCB from below, wall openings (USB-C, toggle switch, buzzer
+  ports, ESP32 antenna vents). The PCB sits in a cavity with **1.0 mm clearance
+  per side** (2.0 mm on the left), so it can be nudged until the four holes line
+  up before driving the screws.
 * **Lid** — 2.0 mm top plate carried by a 1.8 mm raised rim (which is also the
   acrylic panel seat), 3.0 mm locating lip (notched at the four posts), 4 posts
   with glued knurled nuts (**Ø3.8 bore from the post foot → cavity ceiling**, so
@@ -68,6 +70,25 @@ soft): 1.64 × 2.0 mm flat strip ≈ 1.1 mm⁴ → T-section (1.64 × 2.0 plate 
 1.0 × 4.0 rib) ≈ 25.7 mm⁴, i.e. **≈ 23× stiffer** in the same load direction,
 before the thicker plate and the perimeter rim are counted.
 
+### Changes from the second printed revision
+
+The second physical build fit the screws only with the PCB pushed hard against
+the left (-X) wall, and that in turn threw the toggle-switch window off. Both
+symptoms came from the same cause: the base ribs were pressing on bottom-side
+solder joints, so the board could not sit where the openings expect it.
+
+| Problem | Root cause | Fix |
+|---|---|---|
+| Screws align only with the PCB jammed to the far left; switch window then wrong | Rib #1 (X 7.0–8.9) was 1.2 mm from SW1's left pin — but the STEP only contains the Ø0.6 pin (reaching z = −1.914 below the board), while the real solder fillet is 0.5–0.8 mm fatter, so it lifted the board and the board could only sit jammed left | Rib #1 moved to X **5.4–7.4** (2.7 mm from the pin); pass-hole Ø3.4 → **Ø3.8** (±0.65) |
+| Switch knob hits the window when thrown to one side | The window was centred on the lever's *as-exported* position (X 18.16), but the lever sits at the end of its travel (electrical centre 16.51 + half of the 3.3 mm travel) → whole window 1.65 mm too far right | Window centred on the switch's **electrical centre** (middle signal pin) and sized from both travel extremes (`sw_slot_x()`, 8.0 mm wide, symmetric) |
+| PCB would not seat around EC11 (same soldered-joint risk) | The corridor between key 3 (bottom geometry ends at 69.23) and the EC11 bracket leg (starts at 73.09) is only 3.86 mm wide while the PCB still has ±1.0 mm of play, so the 1.2 mm rib left only 0.3–0.4 mm at the extreme; the corner rib ran to y = 23.5 beside the three signal pins (y ≥ 24.1); the Ø7 encoder post was close to both | Rib #4 **removed** (the transverse rib already crosses that band), corner rib ends at y = **22.6**, encoder post Ø7 → **Ø5.0** (3.2 mm to the nearest bracket leg) |
+| Left wall crowded the screw holes | The two left Ø8 bosses merge into the left wall, so the Ø6 counterbore cuts into it and only 0.36 mm of wall is left beside the bore | Left wall moved out by `LEFT_EXTRA` = **1.0 mm** (outer width 97.175 → 98.175); bosses, ribs, wall openings and panel cut-outs keep their positions. The USB-C receptacle ends up **1.0 mm recessed** relative to the outer face — accepted |
+
+`SOLDER_CLEAR = 1.0 mm` now encodes this rule: every base rib and the encoder
+support post is inflated by that much in XY and must miss all below-board PCB
+geometry. It is asserted at build time, so the next PCB revision cannot silently
+reintroduce a solder-joint collision.
+
 ### Fastener tolerance budget (the "holes don't line up" fix)
 
 When the screw is driven in from below, its lateral position is pinned by the
@@ -76,7 +97,7 @@ the screw follows the board. Everything else has to absorb the rest:
 
 | Feature | Diameter | Slack per side | Absorbs |
 |---|---|---|---|
-| Base pass-hole | Ø3.4 | ±0.45 | PCB position in the cavity + print shrink |
+| Base pass-hole | Ø3.8 | ±0.65 | PCB position in the cavity + print shrink |
 | Head counterbore | Ø6.0 | ±0.70 | screw head offset |
 | Lid nut cavity | Ø3.8 | ±0.65 | screw entering the glued nut |
 
@@ -92,16 +113,18 @@ on the printing platform:
 | Nut pass-through | a Ø3.4 probe swept from each post foot to the cavity floor must leave 0 mm³ | the Ø3.5 knurled nut has to physically enter the post; a Ø2.7 sleeve in the way is invisible to the "is the hole open?" check |
 | Topology | no edge < 0.02 mm, no face < 1e-4 mm², single valid solid | resin/SLA services reject such geometry as "bad edges" |
 | Rib clearance | every lid rib ≥ 0.15 mm from a key window / knob hole / light port | a rib under a key window blocks the keycap |
+| Solder clearance (base) | every base rib and the encoder support post, inflated by `SOLDER_CLEAR` = 1.0 mm, must leave 0 mm³ against all below-board PCB geometry | the ribs touch the PCB, so a solder fillet on a Ø0.6 pin (the STEP knows nothing about solder) lifts the board and shifts every PCB-derived opening |
+| Switch travel window | the knob envelope at both travel extremes must leave 0 mm³ | a window centred on the exported lever position leaves the knob hitting one end, which reads as "the opening is wrong" |
 
 Key dimensions (derived from the PCB STEP at load time — not hard-coded):
 
 | Item | Value |
 |---|---|
-| Outer size | 97.175 × 48.175 × 22.30 mm (base 18.50 + lid plate 2.0 + rim 1.8) |
-| Cavity | 93.975 × 44.975 mm, R3.987; PCB clearance 1.0 mm per side |
+| Outer size | 98.175 × 48.175 × 22.30 mm (base 18.50 + lid plate 2.0 + rim 1.8); the left wall sits `LEFT_EXTRA` = 1.0 mm further out than the rest of the layout, so the outer width is 98.175 instead of 97.175 |
+| Cavity | 94.975 × 44.975 mm, R3.987; PCB clearance 2.0 mm on the left (-X), 1.0 mm elsewhere |
 | PCB | 91.975 × 42.975 × 1.586 mm, corners R2.987 |
 | PCB standing height | bottom face at z = 5.0 (3.4 mm above the floor; lowest solder tips still clear the floor by 1.49 mm) |
-| PCB support | 4 corner bosses + 5 longitudinal + 1 transverse rib, tops all at z = 5.0 |
+| PCB support | 4 corner bosses + 4 longitudinal + 1 transverse rib, tops all at z = 5.0 |
 | Mounting holes | 4 × Ø2.7, PCB local (1.65, 3.0) / (87.65, 3.0) / (1.65, 40.0) / (87.65, 40.0) |
 | Key windows | 3 × 19 × 19 mm centered on the key stems |
 | Encoder | PCB local (79.375, 31.746) — the 2026-10-27 PCB moved it 1.53 mm left of the previous (80.90, 31.75); all lid features follow the STEP, nothing is hard-coded |
@@ -119,7 +142,7 @@ upload it as the panel outline + cut-outs and pick:
 | Item | Value |
 |---|---|
 | Material | acrylic / PC, **1.5 mm** thick, printed on the back (1.0 mm also works: set `PANEL_T = 1.0`, `RIM_H` auto-drops to 1.20) |
-| Outline | **91.67 × 42.67 mm**, corners R2.84 |
+| Outline | **92.67 × 42.67 mm**, corners R2.84 |
 | Cut-outs | 3 × key window **19.2 × 19.2** R2.1, knob **Ø13.8**, light port **Ø3.6** |
 | Attachment | 0.16 mm Crown **#513** white-translucent PET double-sided tape on the back (long-term 80 °C, `PANEL_TAPE`), glued into the rim |
 
@@ -166,7 +189,7 @@ over that annulus would block it.
 
 ```
 z = 0      base floor (screw head sunk: Ø6.0 × 2.2 counterbore)
-           z = 2.2 → 3.5 45° lead-in cone Ø6.0 → Ø3.4
+           z = 2.2 → 3.5 45° lead-in cone Ø6.0 → Ø3.8
 z = 5.0    boss tops / PCB bottom face
 z = 6.586  PCB top face
 z = 6.786  all four lid post feet — identical posts, length 11.71 mm
@@ -245,14 +268,17 @@ the back file is pre-mirrored for reverse printing), `pcb_report.json`.
 `uv run enclosure.py` prints a self-check report and exits non-zero on any
 failure: outer dimensions, panel dimensions, single-solid check, exact boolean
 interference (`PCB ∩ Base`, `PCB ∩ Lid`, `Lid ∩ Panel` must all be < 0.01 mm³),
-screw passage (the Ø6.0 counterbore, the 45° cone and the Ø3.4 pass-hole must be
+screw passage (the Ø6.0 counterbore, the 45° cone and the Ø3.8 pass-hole must be
 empty — the right-hand bosses carry a gusset across the screw area, so the holes
 are cut **after** the gussets), **nut pass-through** (a Ø3.4 × full-travel probe
 swept from each post foot to the cavity floor must be empty — this is what
 catches a post that is too narrow for the nut), screw engagement (≥ 2.0 mm, tip
 must not bottom out), the **fastener tolerance budget** (every slack ≥ 0.35 mm),
-**rib clearance** (every lid rib ≥ 0.15 mm from a key window / hole), the Type-C
-plug path, wall thickness and topology.
+**rib clearance** (every lid rib ≥ 0.15 mm from a key window / hole), **solder
+clearance** (every base rib and the encoder support post, inflated by
+`SOLDER_CLEAR`, must miss all below-board PCB geometry), the **toggle-switch
+travel window** (the knob envelope at both travel extremes), the Type-C plug
+path, wall thickness and topology.
 
 ### After a PCB revision
 
@@ -295,11 +321,12 @@ git-ignored.
    ceiling — only 0.2 mm of travel now, i.e. the nut ends up flush with the post
    foot. Threading the nut onto a spare M2.5 screw or a Ø2.5 rod makes a handy
    insertion tool — hold ~30 s until the epoxy grabs.
-2. Drop the PCB into the base. The cavity is deliberately 1.0 mm larger than the
-   board per side, so nudge the board until the USB-C receptacle is centred in
-   its wall opening and the toggle lever has equal clearance, then check that the
-   four Ø2.7 holes sit over the Ø3.4 bosses (they are visible through the
-   counterbores from below).
+2. Drop the PCB into the base. The cavity is deliberately larger than the board
+   (1.0 mm per side, 2.0 mm at the USB-C end); the ribs no longer press on any
+   bottom-side solder joint, so the board sits flat. Nudge it until all four
+   Ø2.7 holes show as full circles through the Ø3.8 pass-holes — they are
+   visible through the counterbores from below — then check the USB-C
+   receptacle and the toggle lever in their wall openings.
 3. Place the lid; the lip locates in the cavity, posts rest on the PCB.
 4. Drive 4 × M2.5 × 8 pan-head screws **from the bottom** — heads sink into the
    Ø6.0 counterbores and the lead-in cone pulls the screw towards the pass-hole
