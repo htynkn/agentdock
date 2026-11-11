@@ -1,18 +1,21 @@
 /*
- * ble.ts — 智坞 AgentDock BLE 通道 (noble central)
+ * ble.ts — 智坞 AgentDock BLE 通道 (IPC 客户端)
  *
- * 职责: 扫描/连接/断线重连/特征订阅, 上抛事件给 app 层.
+ * 职责: 管理 BLE worker 子进程, 转发扫描/连接/写状态请求, 上抛设备事件.
+ * noble 实际运行在 ble-worker.mjs 子进程内 —— 原因: noble 在 pi 主进程中
+ * 扫描正常但 connectAsync 挂起 (macOS CoreBluetooth 回调路径与 pi 运行时
+ * 冲突, pi 1.4.0/1.5.0 均复现; 同样代码在独立 node 进程 1~2s 连上),
+ * 子进程隔离后连接稳定, 且 noble 原生层崩溃不再波及 pi.
+ *
+ * 对外接口与旧版 (进程内 noble) 完全一致, index.ts / panel.ts 无感知.
  * 与固件 deck.c 的 UUID 定义一一对应.
  */
-import Noble from "@stoprocent/noble";
+import { spawn, type ChildProcess } from "node:child_process";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 export const UUID_SVC = "8e7c1a10c0de4b1e9f6a000000000001";
-const UUID_EVENT = "8e7c1a10c0de4b1e9f6a000000000002";
-const UUID_STATE = "8e7c1a10c0de4b1e9f6a000000000003";
-
 export const NAME_PREFIX = "AgentDock-";
-
-const SCAN_TIMEOUT_MS = 12000;
 
 export interface DeckPeripheralInfo {
   name: string;
@@ -21,44 +24,47 @@ export interface DeckPeripheralInfo {
 
 type Log = (...args: unknown[]) => void;
 
-/** 等待蓝牙适配器可用; 返回 false = 不可用 (权限/未开启) */
-async function waitForBluetooth(timeoutMs = 8000): Promise<boolean> {
-  if (Noble.state === "poweredOn") return true;
-  const ok = await new Promise<boolean>((resolve) => {
-    const timer = setTimeout(() => { Noble.removeListener("stateChange", h); resolve(false); }, timeoutMs);
-    const h = (s: string) => {
-      if (s === "poweredOn") { clearTimeout(timer); Noble.removeListener("stateChange", h); resolve(true); }
-    };
-    Noble.on("stateChange", h);
-  });
-  return ok;
+interface PendingRequest {
+  resolve: (v: any) => void;
 }
 
 export class DeckChannel {
   private log: Log;
-  private peripheral: any = null;
-  private eventChar: any = null;
-  private stateChar: any = null;
+  private worker: ChildProcess | null = null;
+  private pending = new Map<number, PendingRequest>();
+  private nextReqId = 1;
+  private stdinBuf = "";
+  private _connected = false;
+  private _deviceName = "";
+  private _rssi: number | null = null;
   private disposed = false;
-  private connecting = false;
-  private lastRssi: number | null = null;
+  private _connecting = false;
   private connListeners = new Set<(connected: boolean) => void>();
 
-  constructor(private onEvent: (msg: any) => void, private onConnection: (connected: boolean) => void, log: Log = (...a) => console.log(...a)) {
+  constructor(
+    private onEvent: (msg: any) => void,
+    private onConnection: (connected: boolean) => void,
+    log: Log = (...a) => console.log(...a),
+  ) {
     this.log = log;
   }
 
   get connected(): boolean {
-    return this.peripheral !== null && this.stateChar !== null;
+    return this._connected;
   }
 
   get deviceName(): string {
-    return this.peripheral?.advertisement?.localName ?? "";
+    return this._deviceName;
+  }
+
+  /** 是否有连接尝试进行中 (重连调度用, 避免重叠尝试) */
+  get connecting(): boolean {
+    return this._connecting;
   }
 
   /** 缓存的信号强度 (连接时记录, refreshRssi 更新) */
   get rssi(): number | null {
-    return this.lastRssi;
+    return this._rssi;
   }
 
   /** 订阅连接状态变化 (面板等 UI 用); 返回退订函数 */
@@ -80,46 +86,130 @@ export class DeckChannel {
     }
   }
 
-  /** 主动读取已连接设备的 RSSI; 失败/超时返回缓存值 (无缓存 = null) */
-  async refreshRssi(timeoutMs = 1500): Promise<number | null> {
-    const p: any = this.peripheral;
-    if (!p || typeof p.updateRssiAsync !== "function") return this.lastRssi;
-    try {
-      const v = await Promise.race([
-        p.updateRssiAsync(),
-        new Promise<null>((r) => setTimeout(() => r(null), timeoutMs)),
-      ]);
-      if (typeof v === "number") {
-        this.lastRssi = v;
-        return v;
-      }
-    } catch {
-      /* 读取失败沿用缓存值 */
-    }
-    return this.lastRssi;
+  /* ---------------- worker 进程管理 ---------------- */
+
+  private workerPath(): string {
+    const here = dirname(fileURLToPath(import.meta.url));
+    return join(here, "ble-worker.mjs");
   }
+
+  private ensureWorker(): ChildProcess {
+    if (this.worker && !this.worker.killed && this.worker.exitCode === null) {
+      return this.worker;
+    }
+    const child = spawn(process.execPath, [this.workerPath()], {
+      cwd: dirname(this.workerPath()),
+      stdio: ["pipe", "pipe", "pipe"],
+      env: process.env,
+    });
+    this.worker = child;
+    this.disposed = false;
+
+    child.stdout!.setEncoding("utf8");
+    child.stdout!.on("data", (chunk: string) => {
+      this.stdinBuf += chunk;
+      let idx: number;
+      while ((idx = this.stdinBuf.indexOf("\n")) >= 0) {
+        const line = this.stdinBuf.slice(0, idx).trim();
+        this.stdinBuf = this.stdinBuf.slice(idx + 1);
+        if (!line) continue;
+        let msg: any;
+        try {
+          msg = JSON.parse(line);
+        } catch {
+          this.log("worker 输出无法解析:", line.slice(0, 120));
+          continue;
+        }
+        this.handleWorkerMessage(msg);
+      }
+    });
+
+    child.stderr!.setEncoding("utf8");
+    child.stderr!.on("data", (chunk: string) => {
+      /* worker 崩溃时的堆栈等诊断信息 */
+      this.log("[worker-stderr]", chunk.trimEnd());
+    });
+
+    child.on("exit", (code, signal) => {
+      if (this.worker === child) this.worker = null;
+      /* 进程退出 = 通道死亡, 未决请求全部了结, 连接状态归位 */
+      for (const [id, p] of this.pending) {
+        p.resolve({ __workerDead: true });
+        this.pending.delete(id);
+      }
+      if (this._connected || this._connecting) {
+        this._connected = false;
+        this._connecting = false;
+        this.emitConnection(false);
+      }
+      if (!this.disposed) {
+        this.log(`worker 退出 (code=${code} signal=${signal})`);
+      }
+    });
+
+    return child;
+  }
+
+  private handleWorkerMessage(msg: any): void {
+    switch (msg.type) {
+      case "log":
+        this.log(...(msg.args ?? []));
+        break;
+      case "event":
+        try {
+          this.onEvent(msg.msg);
+        } catch {
+          /* 上抛层异常不影响通道 */
+        }
+        break;
+      case "connection":
+        this._connected = !!msg.connected;
+        this._deviceName = msg.connected ? String(msg.name ?? "") : "";
+        this._rssi = msg.connected
+          ? (typeof msg.rssi === "number" ? msg.rssi : this._rssi)
+          : null;
+        this.emitConnection(this._connected);
+        break;
+      default:
+        if (typeof msg.id === "number" && this.pending.has(msg.id)) {
+          const p = this.pending.get(msg.id)!;
+          this.pending.delete(msg.id);
+          p.resolve(msg);
+        }
+        /* 其余未知消息忽略 */
+        break;
+    }
+  }
+
+  /** 发送请求并等待 result 消息 (按 id 关联) */
+  private request(op: string, extra: Record<string, unknown> = {}): Promise<any> {
+    const child = this.ensureWorker();
+    const stdin = child.stdin;
+    if (!stdin || !stdin.writable) {
+      return Promise.resolve({ ok: false, error: "worker stdin 不可用" });
+    }
+    const id = this.nextReqId++;
+    return new Promise((resolve) => {
+      this.pending.set(id, { resolve });
+      try {
+        stdin.write(JSON.stringify({ op, id, ...extra }) + "\n");
+      } catch (e) {
+        this.pending.delete(id);
+        resolve({ ok: false, error: e instanceof Error ? e.message : String(e) });
+      }
+    });
+  }
+
+  /* ---------------- 公共 API (与旧版进程内 noble 保持一致) ---------------- */
 
   /** 扫描所有 AgentDock 设备 (不连接), 返回按信号强度排序的列表 */
   async scan(timeoutMs = 8000): Promise<DeckPeripheralInfo[]> {
-    if (!(await waitForBluetooth())) {
-      this.log("蓝牙不可用: 检查系统蓝牙开关, 以及终端 App 的蓝牙权限 (系统设置→隐私与安全→蓝牙)");
-      return [];
-    }
-    Noble.startScanning([], false);
-    const found = new Map<string, DeckPeripheralInfo>();
-    const onDiscover = (p: any) => {
-      const name: string = p.advertisement?.localName ?? "";
-      if (!name.startsWith(NAME_PREFIX)) return;
-      const prev = found.get(name);
-      if (!prev || p.rssi > prev.rssi) {
-        found.set(name, { name, rssi: p.rssi });
-      }
-    };
-    Noble.on("discover", onDiscover);
-    await new Promise((r) => setTimeout(r, timeoutMs));
-    Noble.removeListener("discover", onDiscover);
-    Noble.stopScanning();
-    return [...found.values()].sort((a, b) => b.rssi - a.rssi);
+    const res = await this.request("scan", { ms: timeoutMs });
+    if (!res.ok || res.__workerDead) return [];
+    const devices: DeckPeripheralInfo[] = (res.devices ?? [])
+      .filter((d: any) => typeof d?.name === "string" && typeof d?.rssi === "number")
+      .map((d: any) => ({ name: d.name, rssi: d.rssi }));
+    return devices.sort((a, b) => b.rssi - a.rssi);
   }
 
   /**
@@ -127,130 +217,54 @@ export class DeckChannel {
    * 期间已有连接则先断开.
    */
   async connect(preferredName: string): Promise<"ok" | "not_found" | "failed"> {
-    if (this.connecting) return "failed";
-    this.connecting = true;
+    if (this._connecting) return "failed";
+    this._connecting = true;
     try {
-      this.disposeLink();
-      const devices = await this.scan();
-      if (this.disposed) return "failed";
-      let target: DeckPeripheralInfo | undefined;
-      if (preferredName) {
-        target = devices.find((d) => d.name === preferredName);
-      } else if (devices.length === 1) {
-        target = devices[0];
-      } else if (devices.length > 1) {
-        target = devices[0];   // 多设备未指定: 取信号最强的, /deck 可改绑
-      }
-      if (!target) {
-        this.log(`未发现设备 (${devices.length ? "目标不在列表" : "列表为空"})`);
-        return "not_found";
-      }
-      this.log(`连接 ${target.name} (rssi ${target.rssi}) ...`);
-      const p: any = await this.findAndConnect(target.name);
-      if (!p) {
-        this.log("GAP 连接失败 (findAndConnect 返回空)");
+      const res = await this.request("connect", { name: preferredName ?? "" });
+      if (!res.ok || res.__workerDead) return "failed";
+      const result = res.result;
+      if (result !== "ok" && result !== "not_found" && result !== "failed") {
         return "failed";
       }
-
-      this.peripheral = p;
-      this.lastRssi = typeof target.rssi === "number" ? target.rssi : null;
-      /* noble 会缓存同一外设/特征的对象实例。重连时若不先清空旧监听器，
-       * disconnect / data 监听会逐次叠加 → 一次按键事件被重复投递 N 次
-       * （重连过几次就重复几份）。这是“按一下发多条消息”的根因。 */
-      p.removeAllListeners("disconnect");
-      p.once("disconnect", () => {
-        if (this.disposed) return;
-        this.log("设备断开");
-        this.disposeLink();
-        this.emitConnection(false);
-      });
-
-      this.log("发现服务/特征 ...");
-      const { services, characteristics } = await p.discoverSomeServicesAndCharacteristicsAsync(
-        [], [UUID_EVENT, UUID_STATE]
-      );
-      this.log("services:", services?.map((s: any) => s.uuid).join(","),
-               "chars:", characteristics?.map((c: any) => c.uuid).join(","));
-      const byUuid = (u: string) => characteristics.find((c: any) => c.uuid.replace(/-/g, "").toLowerCase() === u);
-      this.eventChar = byUuid(UUID_EVENT);
-      this.stateChar = byUuid(UUID_STATE);
-      if (!this.eventChar || !this.stateChar) {
-        this.log("GATT 特征缺失");
-        this.disposeLink();
-        return "failed";
-      }
-      this.eventChar.removeAllListeners("data");
-      this.eventChar.on("data", (raw: Buffer) => {
-        try {
-          this.onEvent(JSON.parse(raw.toString("utf8")));
-        } catch {
-          this.log("非法事件报文:", raw.toString("hex"));
-        }
-      });
-      await this.eventChar.subscribeAsync();
-      this.log(`已连接 ${target.name}`);
-      this.emitConnection(true);
-      return "ok";
-    } catch (e) {
-      this.log("连接异常:", e instanceof Error ? e.message : e);
-      this.disposeLink();
-      return "failed";
+      return result;
     } finally {
-      this.connecting = false;
+      this._connecting = false;
     }
   }
 
-  private async findAndConnect(name: string): Promise<any> {
-    Noble.startScanning([], false);
-    try {
-      const p: any = await new Promise((resolve, reject) => {
-        const timer = setTimeout(() => { cleanup(); resolve(null); }, 8000);
-        const onDiscover = async (d: any) => {
-          if (d.advertisement?.localName !== name) return;
-          cleanup();
-          Noble.stopScanning();
-          try {
-            await d.connectAsync();
-            resolve(d);
-          } catch (e) { reject(e); }
-        };
-        const cleanup = () => {
-          clearTimeout(timer);
-          Noble.removeListener("discover", onDiscover);
-        };
-        Noble.on("discover", onDiscover);
-      });
-      return p;
-    } catch {
-      Noble.stopScanning();
-      return null;
-    }
+  /** 主动读取已连接设备的 RSSI; 失败/超时返回缓存值 (无缓存 = null) */
+  async refreshRssi(timeoutMs = 1500): Promise<number | null> {
+    const res = await this.request("refreshRssi", {});
+    if (!res.ok || res.__workerDead) return this._rssi;
+    return typeof res.value === "number" ? (this._rssi = res.value) : this._rssi;
   }
 
   /** 向 STATE char 写 agent 状态 (驱动设备 LED) */
   async writeState(state: string): Promise<void> {
-    if (!this.stateChar) return;
-    try {
-      await this.stateChar.writeAsync(Buffer.from(JSON.stringify({ t: "s", st: state }), "utf8"), false);
-    } catch (e) {
-      this.log("状态写入失败:", e);
-    }
-  }
-
-  private disposeLink(): void {
-    this.eventChar = null;
-    this.stateChar = null;
-    this.lastRssi = null;
-    if (this.peripheral) {
-      try { this.peripheral.removeAllListeners("disconnect"); } catch {}
-      try { this.peripheral.disconnect(); } catch {}
-      this.peripheral = null;
-    }
+    if (!this.worker) return; /* 未连接时静默跳过 (与旧行为一致) */
+    await this.request("writeState", { state });
   }
 
   dispose(): void {
     this.disposed = true;
-    Noble.stopScanning();
-    this.disposeLink();
+    const child = this.worker;
+    this.worker = null;
+    this._connected = false;
+    this._connecting = false;
+    if (child) {
+      const stdin = child.stdin;
+      if (stdin && stdin.writable) {
+        try {
+          stdin.write(JSON.stringify({ op: "dispose" }) + "\n");
+          stdin.end();
+        } catch {
+          /* worker 可能已退出 */
+        }
+      }
+      child.kill();
+      for (const [, p] of this.pending) p.resolve({ __workerDead: true });
+      this.pending.clear();
+    }
+    this.emitConnection(false);
   }
 }

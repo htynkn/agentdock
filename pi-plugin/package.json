@@ -30,6 +30,7 @@
   "files": [
     "index.ts",
     "ble.ts",
+    "ble-worker.mjs",
     "panel.ts",
     "config.ts",
     "scroll.ts",
