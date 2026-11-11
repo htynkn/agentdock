@@ -1,0 +1,19 @@
+.github/workflows/release-pi-plugin.yml
+  s_02a33b908918db::t_7304e7e8ded237 41-46,53-59
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f3690a0bb9166d3fb50cdb0ed799a8976fdef72a",
+  "prompts": {},
+  "sessions": {
+    "s_02a33b908918db": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1cac3-da2b-7490-bf67-6a4141df5c39",
+        "model": "deepseek-flash"
+      },
+      "human_author": "htynkn <htynkn@gmail.com>"
+    }
+  }
+}
