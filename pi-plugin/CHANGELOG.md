@@ -9,6 +9,34 @@ See [PUBLISHING.md](./PUBLISHING.md) for the release process.
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed the "device discovered but never connects" failure loop. Root cause: noble's
+  `connectAsync()` resolves `undefined` on success, and the timeout guard treated that
+  falsy value as a timeout — then cancelled the just-established connection (the device
+  stops advertising while connected, so every later rescan came back empty). Success
+  values are now normalized with `.then(() => true)`.
+- When the bound device is offline and exactly one other AgentDock is present, the
+  extension now re-binds to it automatically (with a notification) instead of retrying
+  silently forever. Device names embed the MAC suffix, so swapped boards change the name.
+- The `/dock` panel's bind / reconnect actions no longer permanently disable the
+  channel (`dispose()` used to leave `disposed` latched; every later `connect()` failed
+  immediately).
+- Added timeouts around GAP connect, GATT discovery and characteristic subscription:
+  a hung step now fails fast and the reconnect loop keeps working instead of latching
+  the connecting flag forever.
+- Failure notifications are deduplicated per reason instead of firing on every retry,
+  and "no device found" is now surfaced once in the TUI.
+
+### Changed
+
+- noble now runs in a dedicated child process (`ble-worker.mjs`) instead of inside the
+  pi process. Motivation beyond crash isolation: the in-process path was fragile on
+  macOS (scanning worked, `connectAsync` hung; verified on pi 1.4.0 and 1.5.0). The
+  worker speaks a JSONL protocol over stdio; the `DeckChannel` API is unchanged, so
+  the extension and panel code are untouched. Scan results are briefly cached (3 s)
+  to avoid a second 8 s scan when re-checking the device list after a failed connect.
+
 ## [0.1.0] - 2026-10-30
 
 First published version.

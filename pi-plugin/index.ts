@@ -195,18 +195,45 @@ export default function agentDeckExtension(pi: ExtensionAPI) {
   }
 
   /* ---------- 连接管理 ---------- */
+  /* 同一失败原因只提示一次, 避免重试循环刷屏; 连接成功后复位 */
+  let lastFailReason = "";
+  function notifyFailure(ctx: ExtensionContext, reason: string, message: string): void {
+    if (reason === lastFailReason) return;
+    lastFailReason = reason;
+    ctx.ui.notify(message, "warning");
+  }
+
   async function connectOnce(ctx: ExtensionContext): Promise<boolean> {
     const result = await channel.connect(config.preferredDevice);
-    if (result === "ok") return true;
+    if (result === "ok") {
+      lastFailReason = "";
+      return true;
+    }
     if (result === "not_found") {
-      // 未绑定且发现多台 → 进面板选择; 其余情况静默重试
       const devices = await channel.scan();
+      if (devices.length === 1 && devices[0].name !== config.preferredDevice) {
+        /* 绑定设备不在线, 现场只有另一台 → 自动改绑并落盘。
+         * 固件按 MAC 后缀命名, 换板/重烧后名字会变; 若不改绑,
+         * 会永远静默重试 —— 「能扫到设备却连不上」的根因 */
+        const old = config.preferredDevice || "(未绑定)";
+        config.preferredDevice = devices[0].name;
+        saveConfig(config);
+        ctx.ui.notify(`绑定设备 ${old} 不在线, 已自动改绑 ${devices[0].name}`, "warning");
+        const retry = await channel.connect(config.preferredDevice);
+        if (retry === "ok") {
+          lastFailReason = "";
+          return true;
+        }
+        return false;
+      }
       if (devices.length > 1) {
         ctx.ui.notify(`发现 ${devices.length} 台 AgentDock, 请选择`, "warning");
         await runPanel(ctx);
         return channel.connected;
       }
-      log("未发现设备, 稍后重试");
+      notifyFailure(ctx, "no-device", "未发现 AgentDock 设备, 每 5s 后台重试 (设备 LED 心跳=未连接)");
+    } else {
+      notifyFailure(ctx, "connect-failed", "AgentDock 连接失败, 每 5s 重试 (详情见日志)");
     }
     return false;
   }
@@ -225,6 +252,9 @@ export default function agentDeckExtension(pi: ExtensionAPI) {
         reconnectTimer = null;
         return;
       }
+      /* 一次连接尝试 (扫描+GATT) 可能超过重连间隔, 重叠时直接跳过本轮,
+       * 避免 connect() 被 connecting 锁拒绝而误报「连接失败」 */
+      if (channel.connecting) return;
       void connectOnce(ctx);
     }, RECONNECT_MS);
   }
