@@ -9,7 +9,9 @@
  *   KEY1 短按   → 打断 agent (pi.abort)
  *   KEY1 长按   → 静音切换 (NVS 持久化, 本地音效)
  *   KEY2 短按   → 宏「继续」
+ *   KEY2 长按   → 演示模式: 魂斗罗旋律 + 七彩呼吸灯 (3s)
  *   KEY3 短按   → 「继续」
+ *   KEY3 长按   → 旋钮刻度音开关 (NVS 持久化)
  *   旋钮旋转    → 滚动 agent 输出 (本地齿轮声, 顺时针升调/逆时针降调)
  *   旋钮按压    → 「继续」
  *
@@ -44,6 +46,16 @@ static void send_key_event(int key_id)
     deck_send_event(buf);
 }
 
+/** 把设备当前设置上报给扩展 (面板显示用; 设备 NVS 是唯一真源) */
+static void send_settings_event(void)
+{
+    char buf[80];
+    snprintf(buf, sizeof(buf), "{\"k\":\"cfg\",\"b\":%u,\"v\":%u,\"m\":%d,\"c\":%d}",
+             fx_get_brightness(), fx_get_volume(),
+             fx_is_muted() ? 1 : 0, fx_is_click_enabled() ? 1 : 0);
+    deck_send_event(buf);
+}
+
 static void handle_event(const input_event_t *ev)
 {
     switch (ev->type) {
@@ -75,12 +87,27 @@ static void handle_event(const input_event_t *ev)
         break;
 
     case IN_EVT_KEY_LONG:
-        if (ev->value == KEY_ID_1) {
+        switch (ev->value) {
+        case KEY_ID_1: {   /* 静音 */
             const bool muted = !fx_is_muted();
             fx_set_muted(muted);
-            config_save_muted(muted);
             ESP_LOGI(TAG, "动作: 静音 → %s", muted ? "开" : "关");
             fx_play(muted ? FX_MUTED_ON : FX_MUTED_OFF);
+            break;
+        }
+        case KEY_ID_2:     /* 演示: 魂斗罗 + 七彩呼吸 (本地反馈, 不依赖连接) */
+            ESP_LOGI(TAG, "动作: 演示模式");
+            fx_demo_start();
+            break;
+        case KEY_ID_3: {   /* 旋钮刻度音开关 */
+            const bool on = !fx_is_click_enabled();
+            fx_set_click_enabled(on);
+            ESP_LOGI(TAG, "动作: 旋钮刻度音 → %s", on ? "开" : "关");
+            fx_play(on ? FX_MUTED_ON : FX_MUTED_OFF);
+            break;
+        }
+        default:
+            break;
         }
         break;
 
@@ -115,6 +142,7 @@ static void on_deck_channel(bool active)
     if (active) {
         fx_play(FX_CONFIRM);
         fx_set_agent_state(DECK_STATE_IDLE);   /* 真实状态由扩展补推 */
+        send_settings_event();                 /* 把亮度/音量/静音交给面板显示 */
     } else {
         fx_set_offline();
     }
@@ -143,14 +171,10 @@ void app_main(void)
     ESP_LOGI(TAG, "===== AgentDock 启动 =====");
 
     app_init_nvs();
+    config_init();   /* 配置先于 fx: 音量/亮度在第一个音符/第一帧 LED 前就位 */
 
     /* fx 先于其它模块: 启动音效/静音状态立即可用 */
     fx_init();
-
-    bool muted = false;
-    config_load_muted(&muted);
-    fx_set_muted(muted);
-    ESP_LOGI(TAG, "静音状态: %s", muted ? "开" : "关");
 
     make_device_name();
 

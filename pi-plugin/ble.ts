@@ -245,6 +245,12 @@ export class DeckChannel {
     await this.request("writeState", { state });
   }
 
+  /** 向 STATE char 写亮度/音量 (0~100, 设备侧落 NVS 并立即生效) */
+  async writeSettings(brightness: number, volume: number): Promise<void> {
+    if (!this.worker) return;
+    await this.request("writeSettings", { brightness, volume });
+  }
+
   dispose(): void {
     this.disposed = true;
     const child = this.worker;

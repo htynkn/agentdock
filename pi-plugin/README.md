@@ -51,7 +51,8 @@ Run `/dock` inside pi to open the management panel:
 
 - select or rebind a device
 - edit the KEY2 / KEY3 macros
-- test LED states
+- test LED states (including `auto`, which plays the full seven-colour cycle once)
+- set LED brightness and buzzer volume (applied live, persisted on the device)
 - force a reconnect
 
 Configuration is stored in `~/.pi/agent/agentdock.json`:
@@ -59,9 +60,15 @@ Configuration is stored in `~/.pi/agent/agentdock.json`:
 ```json
 {
   "preferredDevice": "AgentDock-A1B2",
-  "macros": ["继续", "不对"]
+  "macros": ["继续", "不对"],
+  "brightness": 100,
+  "volume": 100
 }
 ```
+
+`brightness` / `volume` are a display cache only: the device's own NVS is the
+source of truth, and the values reported by the device on connect overwrite the
+local ones.
 
 ### Controls
 
@@ -70,7 +77,9 @@ Configuration is stored in `~/.pi/agent/agentdock.json`:
 | KEY1 short press | Abort the current run |
 | KEY1 long press | Toggle the device buzzer mute (device-local) |
 | KEY2 short press | Send macro 0 (default `继续`) |
+| KEY2 long press | Demo mode: Contra riff + seven-colour breathing LED (3 s, device-local) |
 | KEY3 short press | Send macro 1 (default `不对`) |
+| KEY3 long press | Toggle the encoder click sound (device-local) |
 | Encoder push | Send `继续` |
 | Encoder rotate | Scroll the transcript by ±3 lines per step |
 
@@ -82,6 +91,7 @@ Configuration is stored in `~/.pi/agent/agentdock.json`:
 | Green breathing | Agent is running |
 | White double flash | Run finished |
 | Red triple flash | A tool returned an error |
+| Seven-colour breathing | Demo / `auto` LED test (3 s) |
 | Very dim blue heartbeat | Not connected |
 
 ### Transcript scrolling
@@ -103,9 +113,11 @@ The extension talks to `firmware/main/deck.c` over a custom GATT service:
 // device -> host
 {"k":"key","id":2}
 {"k":"enc","v":-1}
+{"k":"cfg","b":100,"v":80,"m":0,"c":1}   // 设备设置快照 (连接后立即推一次)
 
 // host -> device
-{"t":"s","st":"busy"}
+{"t":"s","st":"busy"}     // idle | busy | done | error | demo
+{"t":"cfg","b":80,"v":60} // 亮度 / 音量 0~100 (设备落 NVS)
 ```
 
 ## Development

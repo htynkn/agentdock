@@ -9,6 +9,21 @@ See [PUBLISHING.md](./PUBLISHING.md) for the release process.
 
 ## [Unreleased]
 
+### Added
+
+- 长按 KEY2 进入演示模式: 播放一段魂斗罗旋律, LED 走一圈七彩呼吸 (3 秒后回到
+  agent 真实状态). 设备本地动作, 不依赖 BLE 连接.
+- 长按 KEY3 开关旋钮刻度音 (与静音一样写 NVS 持久化).
+- 固件新增亮度/音量设置并持久化到 NVS; 亮度是对原配色的百分比缩放,
+  音量映射到蜂鸣器 PWM 占空比 (0% = 无声).
+- BLE 新增两类报文: `{"t":"cfg","b":..,"v":..}` (host→device 设置) 与
+  `{"k":"cfg","b":..,"v":..,"m":..,"c":..}` (device→host 设置快照, 连接后立即推一次);
+  STATE 状态新增 `demo` (七彩呼吸一次).
+- `/dock` 面板新增「设备设置」: 用 SettingsList 调 LED 亮度与音量, 每改一档
+  立即下发 (可边调边看/听), Esc 收尾. 未连接时明确提示调整不会生效.
+- `/dock` 灯效测试新增 `auto`: 一次展示七彩颜色 (设备侧 3 秒后自动回当前状态).
+- 固件 LED 改由独立任务渲染: 旋律播放时灯光不再冻结 (演示模式需要声光同时).
+
 ### Fixed
 
 - Fixed the "device discovered but never connects" failure loop. Root cause: noble's

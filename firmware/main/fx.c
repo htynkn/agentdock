@@ -15,10 +15,12 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "led_strip.h"
 #include "led_strip_spi.h"
 
+#include "config.h"
 #include "deck.h"
 
 static const char *TAG = "fx";
@@ -126,6 +128,9 @@ static const char *s_melodies[FX_COUNT] = {
     [FX_MUTED_ON]   = "muteon:d=8,o=6,b=250:e6,4e6",                 /* 一短一长 */
     [FX_MUTED_OFF]  = "muteoff:d=8,o=6,b=250:4e6,e6",                /* 一长一短 */
     [FX_DISCONNECT] = "offline:d=4,o=4,b=200:c4",                    /* 单长低音 */
+    /* 魂斗罗 (Contra) 丛林关主 riff: 16 分音符琶音, 4 小节 ≈ 1.7s */
+    [FX_DEMO]       = "contra:d=16,o=4,b=190:a,a,a,a,c5,d5,e5,d5,c5,b4,c5,"
+                      "a,a,a,a,g4,a4,b4,a4,g4,a4",
 };
 _Static_assert(sizeof(s_melodies) / sizeof(s_melodies[0]) == FX_COUNT, "旋律表与枚举不齐");
 
@@ -134,24 +139,28 @@ typedef struct {
     led_strip_handle_t led;
     QueueHandle_t requests;
     QueueHandle_t clicks;          /* 旋钮刻度音请求 (int8_t: +1/-1) */
-    volatile bool muted;
     int64_t last_click_us;         /* 上次刻度音时刻, 用于合并连跳 */
     int8_t last_click_dir;         /* 上次刻度音方向, 换向时立即响应 */
 } fx_ctx_t;
 
 static fx_ctx_t s_fx;
 
+/* 音量 → LEDC duty (10bit, 50% duty = 满音量). 静音时直接 0. */
 static void buzzer_hw(bool on)
 {
+    uint32_t duty = 0;
+    if (on && !config_get()->muted) {
+        duty = 512u * config_get()->volume / 100u;
+    }
     /* duty 0 = MOSFET 关断, 物理静音 */
-    ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, on ? 512 : 0));
+    ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, duty));
     ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0));
 }
 
 /* 刻度音: 两段短音, 方向决定尾部走向. 静音时完全不出声. */
 static void click_play(int8_t dir)
 {
-    if (s_fx.muted) return;
+    if (config_get()->muted) return;
     const click_step_t *steps = dir > 0 ? CLICK_CW : CLICK_CCW;
     for (int i = 0; i < 2; i++) {
         ESP_ERROR_CHECK(ledc_set_freq(LEDC_LOW_SPEED_MODE, LEDC_TIMER_0, steps[i].hz));
@@ -180,7 +189,7 @@ static void click_flush(void)
 static void play_notes(const note_t *notes, int count)
 {
     for (int i = 0; i < count; i++) {
-        if (notes[i].freq_hz > 0 && !s_fx.muted) {
+        if (notes[i].freq_hz > 0 && !config_get()->muted) {
             ESP_ERROR_CHECK(ledc_set_freq(LEDC_LOW_SPEED_MODE, LEDC_TIMER_0, notes[i].freq_hz));
             buzzer_hw(true);
         }
@@ -192,35 +201,93 @@ static void play_notes(const note_t *notes, int count)
     click_flush();       /* 旋律整体结束时清掉残留, 保持刻度音实时 */
 }
 
-/* ---------------- LED 状态机 ---------------- */
+/* ---------------- LED 状态机 (由 led 任务独占渲染) ---------------- */
 typedef enum {
     LED_MODE_OFFLINE,    /* 未连接: 每 1s 极暗蓝光心跳 */
     LED_MODE_STATIC,     /* 常亮 (idle 蓝) */
     LED_MODE_BREATHING,  /* 呼吸 (busy 绿) */
     LED_MODE_FLASH_N,    /* 闪 N 次后回 base (done/error) */
+    LED_MODE_DEMO,       /* 七彩呼吸 N tick 后回 agent 状态 (演示/灯效测试) */
 } led_mode_t;
 
-static volatile led_mode_t s_led_mode = LED_MODE_OFFLINE;
+#define LED_TICK_MS      100
+#define LED_DEMO_TICKS   30   /* 3s: 与扩展侧 TRANSIENT_MS 对齐 */
+#define LED_DEMO_HOLD    4    /* 每种颜色保持的 tick 数 (7 色 ≈ 2.8s) */
+/* 呼吸曲线: 峰值 32 = 缩放基准 (100ms/tick, 2s 周期) */
+static const uint8_t LED_BREATH[10] = { 4, 8, 14, 20, 24, 26, 24, 20, 14, 8 };
+/* 七彩: 红 橙 黄 绿 青 蓝 紫 (值为峰值, 再乘呼吸系数) */
+static const uint8_t LED_RAINBOW[7][3] = {
+    { 40, 0, 0 }, { 40, 20, 0 }, { 40, 40, 0 }, { 0, 40, 0 },
+    { 0, 30, 40 }, { 0, 0, 40 }, { 20, 0, 40 },
+};
+
+/* 状态由多个任务 (app 任务改状态 / led 任务渲染) 访问 → 互斥锁保护 */
+static SemaphoreHandle_t s_led_mtx;
+static led_mode_t s_led_mode = LED_MODE_OFFLINE;
+static deck_state_t s_agent_state = DECK_STATE_IDLE;   /* demo 结束后回这里 */
 static uint8_t s_led_base[3] = { 0, 0, 40 };      /* idle 蓝 (微亮) */
 static uint8_t s_led_active[3] = { 0, 0, 0 };
 static int s_led_flashes_left = 0;
 static bool s_led_flash_on = false;   /* FLASH_N 相位: true=亮(active) false=灭(黑) */
-static volatile bool s_led_on = false;
-static int64_t s_led_next_at = 0;
-#define LED_TICK_MS 100
+static int s_led_demo_tick = 0;
+static int s_led_phase = 0;           /* 呼吸相位: 跨模式共用, 切模式不跳变 */
 
+/* 只改状态不渲染 (锁内调) */
+static void led_apply_agent_state(deck_state_t state)
+{
+    switch (state) {
+    case DECK_STATE_IDLE:
+        s_led_mode = LED_MODE_STATIC;
+        s_led_base[0] = 0; s_led_base[1] = 0; s_led_base[2] = 40;   /* 蓝 */
+        break;
+    case DECK_STATE_BUSY:
+        s_led_mode = LED_MODE_BREATHING;
+        s_led_active[0] = 0; s_led_active[1] = 40; s_led_active[2] = 0;   /* 绿 */
+        break;
+    case DECK_STATE_DONE:
+        s_led_mode = LED_MODE_FLASH_N;
+        s_led_active[0] = 40; s_led_active[1] = 40; s_led_active[2] = 40;   /* 白 */
+        s_led_flashes_left = 4;   /* 双闪 = 亮灭亮灭 */
+        s_led_flash_on = true;    /* 先亮相, 首拍即见效果色 */
+        break;
+    case DECK_STATE_ERROR:
+        s_led_mode = LED_MODE_FLASH_N;
+        s_led_active[0] = 40; s_led_active[1] = 0; s_led_active[2] = 0;   /* 红 */
+        s_led_flashes_left = 6;   /* 三连闪 */
+        s_led_flash_on = true;
+        break;
+    case DECK_STATE_DEMO:
+        s_led_mode = LED_MODE_DEMO;
+        s_led_demo_tick = 0;
+        break;
+    default:
+        break;
+    }
+}
+
+/* 渲染一帧 (锁内调) */
 static void apply_led(void)
 {
     uint8_t r = 0, g = 0, b = 0;
     switch (s_led_mode) {
     case LED_MODE_BREATHING: {
-        /* 2s 周期呼吸: 用 100ms tick 近似正弦 (6 段阶梯) */
-        static const uint8_t breath[10] = { 4, 8, 14, 20, 24, 26, 24, 20, 14, 8 };
-        static int phase = 0;
-        r = s_led_active[0] * breath[phase] / 32;
-        g = s_led_active[1] * breath[phase] / 32;
-        b = s_led_active[2] * breath[phase] / 32;
-        phase = (phase + 1) % 10;
+        const uint8_t k = LED_BREATH[s_led_phase];
+        s_led_phase = (s_led_phase + 1) % 10;
+        r = s_led_active[0] * k / 32;
+        g = s_led_active[1] * k / 32;
+        b = s_led_active[2] * k / 32;
+        break;
+    }
+    case LED_MODE_DEMO: {
+        const uint8_t k = LED_BREATH[s_led_phase];
+        s_led_phase = (s_led_phase + 1) % 10;
+        const uint8_t *c = LED_RAINBOW[(s_led_demo_tick / LED_DEMO_HOLD) % 7];
+        r = c[0] * k / 32;
+        g = c[1] * k / 32;
+        b = c[2] * k / 32;
+        if (++s_led_demo_tick >= LED_DEMO_TICKS) {
+            led_apply_agent_state(s_agent_state);   /* 跳完一圈回真实状态 */
+        }
         break;
     }
     case LED_MODE_FLASH_N: {
@@ -246,6 +313,15 @@ static void apply_led(void)
         r = s_led_base[0]; g = s_led_base[1]; b = s_led_base[2];
         break;
     }
+
+    /* 亮度 = 相对百分比缩放 (100 = 原始配色; 0 = 全灭) */
+    const uint8_t bright = config_get()->brightness;
+    if (bright < 100) {
+        r = (uint8_t)(r * bright / 100);
+        g = (uint8_t)(g * bright / 100);
+        b = (uint8_t)(b * bright / 100);
+    }
+
     static uint8_t last[3] = { 0xFF, 0xFF, 0xFF };
     if (last[0] == r && last[1] == g && last[2] == b) return;   /* 无变化不刷 SPI */
     last[0] = r; last[1] = g; last[2] = b;
@@ -253,39 +329,37 @@ static void apply_led(void)
     ESP_ERROR_CHECK(led_strip_refresh(s_fx.led));
 }
 
+/* 独立 LED 任务: 旋律播放期间动画照常跑 (演示模式声光同时) */
+static void led_task(void *arg)
+{
+    for (;;) {
+        xSemaphoreTake(s_led_mtx, portMAX_DELAY);
+        apply_led();
+        xSemaphoreGive(s_led_mtx);
+        vTaskDelay(pdMS_TO_TICKS(LED_TICK_MS));
+    }
+}
+
 void fx_set_offline(void)
 {
+    xSemaphoreTake(s_led_mtx, portMAX_DELAY);
     s_led_mode = LED_MODE_OFFLINE;
+    xSemaphoreGive(s_led_mtx);
 }
 
 void fx_set_agent_state(deck_state_t state)
 {
-    switch (state) {
-    case DECK_STATE_IDLE:
-        s_led_mode = LED_MODE_STATIC;
-        s_led_base[0] = 0; s_led_base[1] = 0; s_led_base[2] = 40;   /* 蓝 */
-        break;
-    case DECK_STATE_BUSY:
-        s_led_mode = LED_MODE_BREATHING;
-        s_led_active[0] = 0; s_led_active[1] = 40; s_led_active[2] = 0;   /* 绿 */
-        break;
-    case DECK_STATE_DONE:
-        s_led_mode = LED_MODE_FLASH_N;
-        s_led_active[0] = 40; s_led_active[1] = 40; s_led_active[2] = 40;   /* 白 */
-        s_led_flashes_left = 4;   /* 双闪 = 亮灭亮灭 */
-        s_led_flash_on = true;    /* 先亮相, 首拍即见效果色 */
-        break;
-    case DECK_STATE_ERROR:
-        s_led_mode = LED_MODE_FLASH_N;
-        s_led_active[0] = 40; s_led_active[1] = 0; s_led_active[2] = 0;   /* 红 */
-        s_led_flashes_left = 6;   /* 三连闪 */
-        s_led_flash_on = true;
-        break;
-    default:
-        break;
-    }
-    s_led_next_at = 0;   /* 立即生效 */
+    xSemaphoreTake(s_led_mtx, portMAX_DELAY);
+    if (state != DECK_STATE_DEMO) s_agent_state = state;   /* demo 不改基准状态 */
+    led_apply_agent_state(state);
+    xSemaphoreGive(s_led_mtx);
     ESP_LOGD(TAG, "LED 状态机 → %d", state);
+}
+
+void fx_demo_start(void)
+{
+    fx_set_agent_state(DECK_STATE_DEMO);   /* 七彩呼吸 3s */
+    fx_play(FX_DEMO);                       /* 魂斗罗 riff */
 }
 
 #define FX_IDLE_POLL_MS 10   /* 空转轮询周期 = 刻度音最大延迟 */
@@ -295,12 +369,6 @@ static void fx_task(void *arg)
     static note_t notes[RTTTL_MAX_NOTES];
     fx_melody_t id;
     for (;;) {
-        /* LED 状态机 tick (100ms), 有按键请求时优先 */
-        const int64_t now = esp_timer_get_time();
-        if (now >= s_led_next_at) {
-            s_led_next_at = now + LED_TICK_MS * 1000;
-            apply_led();
-        }
         /* 刻度音优先: 10ms 轮询一次, 人手旋转的反馈要在半帧内出声 */
         if (click_drain()) {
             continue;
@@ -308,7 +376,7 @@ static void fx_task(void *arg)
         if (xQueueReceive(s_fx.requests, &id, pdMS_TO_TICKS(FX_IDLE_POLL_MS)) != pdTRUE) continue;
         if (id >= FX_COUNT) continue;
 
-        if (s_fx.muted && id != FX_MUTED_OFF) {
+        if (config_get()->muted && id != FX_MUTED_OFF) {
             /* 静音中只放行"关闭静音"的确认音 */
             ESP_LOGD(TAG, "静音中, 跳过 %d", id);
             continue;
@@ -335,7 +403,7 @@ void fx_play(fx_melody_t id)
 
 void fx_encoder_click(int32_t dir)
 {
-    if (dir == 0 || s_fx.muted) return;
+    if (dir == 0 || config_get()->muted || !config_get()->click_sound) return;
 
     const int8_t d = dir > 0 ? 1 : -1;
     const int64_t now = esp_timer_get_time();
@@ -354,7 +422,7 @@ void fx_encoder_click(int32_t dir)
 
 void fx_set_muted(bool muted)
 {
-    s_fx.muted = muted;
+    config_set_muted(muted);        /* 改配置 = 立即生效 (buzzer_hw 每次读) */
     if (muted) {
         buzzer_hw(false);   /* 掐断当前正在响的音符 */
         click_flush();      /* 静音瞬间的待播刻度音一并作废 */
@@ -363,13 +431,47 @@ void fx_set_muted(bool muted)
 
 bool fx_is_muted(void)
 {
-    return s_fx.muted;
+    return config_get()->muted;
+}
+
+void fx_set_click_enabled(bool on)
+{
+    config_set_click_sound(on);     /* 下一格起生效, 无需打断当前刻度音 */
+    if (!on) click_flush();
+}
+
+bool fx_is_click_enabled(void)
+{
+    return config_get()->click_sound;
+}
+
+void fx_set_volume(uint8_t pct)
+{
+    config_set_volume(pct);         /* 下一音符起生效 */
+    if (config_get()->volume == 0) buzzer_hw(false);
+}
+
+uint8_t fx_get_volume(void)
+{
+    return config_get()->volume;
+}
+
+void fx_set_brightness(uint8_t pct)
+{
+    config_set_brightness(pct);     /* led 任务下一 tick (≤100ms) 刷新 */
+}
+
+uint8_t fx_get_brightness(void)
+{
+    return config_get()->brightness;
 }
 
 void fx_led_set(uint8_t r, uint8_t g, uint8_t b)
 {
+    xSemaphoreTake(s_led_mtx, portMAX_DELAY);
     ESP_ERROR_CHECK(led_strip_set_pixel(s_fx.led, 0, r, g, b));
     ESP_ERROR_CHECK(led_strip_refresh(s_fx.led));
+    xSemaphoreGive(s_led_mtx);
 }
 
 void fx_init(void)
@@ -416,6 +518,9 @@ void fx_init(void)
 
     s_fx.requests = xQueueCreate(FX_QUEUE_LEN, sizeof(fx_melody_t));
     s_fx.clicks = xQueueCreate(CLICK_QUEUE_LEN, sizeof(int8_t));
+    s_led_mtx = xSemaphoreCreateMutex();
     xTaskCreate(fx_task, "fx", 3072, NULL, 5, NULL);
-    ESP_LOGI(TAG, "fx 引擎就绪 (buzzer=IO%d led=IO%d)", BUZZER_GPIO, LED_GPIO);
+    xTaskCreate(led_task, "led", 3072, NULL, 4, NULL);
+    ESP_LOGI(TAG, "fx 引擎就绪 (buzzer=IO%d led=IO%d 音量=%u%% 亮度=%u%%)",
+             BUZZER_GPIO, LED_GPIO, config_get()->volume, config_get()->brightness);
 }

@@ -80,6 +80,7 @@ export class FakeChannel {
   scanImpl: () => Promise<DeckPeripheralInfo[]> = async () => [];
   rssiImpl: (() => Promise<number | null>) | null = null;
   readonly statesWritten: string[] = [];
+  readonly settingsWritten: { brightness: number; volume: number }[] = [];
   private listeners = new Set<(connected: boolean) => void>();
 
   onConnectionChange(cb: (connected: boolean) => void): () => void {
@@ -112,6 +113,10 @@ export class FakeChannel {
 
   async writeState(state: string): Promise<void> {
     this.statesWritten.push(state);
+  }
+
+  async writeSettings(brightness: number, volume: number): Promise<void> {
+    this.settingsWritten.push({ brightness, volume });
   }
 
   /** 转成 showPanel 需要的类型 */

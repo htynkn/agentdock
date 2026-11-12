@@ -3,7 +3,8 @@
  *
  * TUI 模式: 手工合成布局 (圆角状态框 + 按键图例 + SelectList 菜单),
  *   状态框内显示连接状态、信号强度条、agent 状态与旋钮可用性;
- *   扫描流程带 Loader 动画与信号强度条, 灯效测试用彩色圆点;
+ *   扫描流程带 Loader 动画与信号强度条, 灯效测试用彩色圆点,
+ *   设备设置用 SettingsList (Enter/Space 循环取值, 改一下就能看到/听到);
  * RPC 等非交互模式: 回退到 ctx.ui 标准对话框 (逻辑等价).
  *
  * 注意: pi-tui 的 Text 默认 paddingX=1/paddingY=1 (上下各一空行),
@@ -15,17 +16,20 @@ import {
   Loader,
   type SelectItem,
   SelectList,
+  type SettingItem,
+  SettingsList,
   Text,
   truncateToWidth,
   visibleWidth,
 } from "@earendil-works/pi-tui";
-import type { DeckConfig } from "./config.js";
+import { clampPct, type DeckConfig } from "./config.js";
 import type { DeckChannel, DeckPeripheralInfo } from "./ble.js";
 
 export type PanelAction =
   | { kind: "bind-device"; name: string }
   | { kind: "edit-macro"; index: number; text: string }
   | { kind: "test-led"; state: string }
+  | { kind: "settings"; brightness: number; volume: number }
   | { kind: "reconnect" }
   | { kind: "exit" };
 
@@ -81,6 +85,11 @@ async function showPanelTui(
         const state = await ledFlow(ctx, channel);
         if (state) return { kind: "test-led", state };
         continue; // 取消 → 回主面板
+      }
+      case "settings": {
+        const next = await settingsFlow(ctx, channel, config);
+        if (next) return { kind: "settings", ...next };
+        continue;
       }
       case "reconnect":
         return { kind: "reconnect" };
@@ -159,7 +168,12 @@ function mainMenu(
       { value: "bind", label: "扫描 / 绑定设备", description: "发现附近设备, 按信号强度排序" },
       { value: "macro-2", label: "编辑宏 KEY2", description: `当前「${macro2}」` },
       { value: "macro-3", label: "编辑宏 KEY3", description: `当前「${macro3}」` },
-      { value: "led", label: "测试灯效", description: "推送 busy / done / error / idle" },
+      { value: "led", label: "测试灯效", description: "推送 auto / busy / done / error / idle" },
+      {
+        value: "settings",
+        label: "设备设置",
+        description: `亮度 ${config.brightness}% · 音量 ${config.volume}%`,
+      },
       { value: "reconnect", label: "重新连接", description: "断开后立即重连" },
       { value: "exit", label: "退出", description: "关闭面板" },
     ];
@@ -212,8 +226,8 @@ function mainMenu(
       const legend = spread(
         theme.fg("muted", "按键 ") +
           theme.fg("text", "KEY1") + theme.fg("dim", " 打断/长按静音 · ") +
-          theme.fg("text", "KEY2") + theme.fg("dim", `「${macro2}」 · `) +
-          theme.fg("text", "KEY3") + theme.fg("dim", `「${macro3}」`),
+          theme.fg("text", "KEY2") + theme.fg("dim", `「${macro2}」/长按演示 · `) +
+          theme.fg("text", "KEY3") + theme.fg("dim", `「${macro3}」/长按刻度音`),
         theme.fg("muted", "旋钮 ") + theme.fg("dim", "滚动/继续"),
         w,
       );
@@ -365,6 +379,11 @@ function ledFlow(ctx: ExtensionContext, channel: DeckChannel): Promise<string | 
 
     /* label 自带彩色圆点 → selectedText 保持原样, 不整体染色 */
     const items: SelectItem[] = [
+      {
+        value: "demo",
+        label: `${theme.fg("accent", "●")} auto`,
+        description: "七彩呼吸一次 (约 3s) 后自动回当前状态",
+      },
       { value: "busy", label: `${theme.fg("success", "●")} busy`, description: "绿色呼吸 · agent 运行中" },
       { value: "done", label: `${theme.fg("text", "●")} done`, description: "白色双闪 · 任务完成" },
       { value: "error", label: `${theme.fg("error", "●")} error`, description: "红色三连闪 · 工具出错" },
@@ -394,6 +413,87 @@ function ledFlow(ctx: ExtensionContext, channel: DeckChannel): Promise<string | 
   });
 }
 
+/* ---------------- 设备设置 (亮度 / 音量) ---------------- */
+
+/* 10% 一档: 11 个值, Enter/Space 循环; 配合设备侧的实时生效就是滑动条 */
+const PCT_VALUES = Array.from({ length: 11 }, (_, i) => `${i * 10}%`);
+
+function settingsFlow(
+  ctx: ExtensionContext,
+  channel: DeckChannel,
+  config: DeckConfig,
+): Promise<{ brightness: number; volume: number } | null> {
+  return ctx.ui.custom<{ brightness: number; volume: number } | null>((tui, theme, _kb, done) => {
+    const container = new Container();
+    let brightness = config.brightness;
+    let volume = config.volume;
+
+    container.addChild(
+      line(
+        theme.bold(theme.fg("accent", "设备设置")) +
+          theme.fg("muted", "  改一下就生效, 并写入设备 NVS"),
+      ),
+    );
+    if (!channel.connected) {
+      container.addChild(
+        line(theme.fg("warning", "⚠ 设备未连接: 调整不会生效, 连上后以设备当前值为准")),
+      );
+    }
+    container.addChild(new Rule((s) => theme.fg("borderMuted", s)));
+
+    const items: SettingItem[] = [
+      {
+        id: "brightness",
+        label: "LED 亮度",
+        currentValue: `${brightness}%`,
+        values: PCT_VALUES,
+        description: "WS2812 明暗 (0% = 全灭)",
+      },
+      {
+        id: "volume",
+        label: "蜂鸣器音量",
+        currentValue: `${volume}%`,
+        values: PCT_VALUES,
+        description: "提示音 / 刻度音响度 (0% = 无声)",
+      },
+    ];
+
+    const list = new SettingsList(
+      items,
+      items.length,
+      {
+        label: (t, selected) => (selected ? theme.fg("accent", theme.bold(t)) : theme.fg("text", t)),
+        value: (t, selected) => (selected ? theme.fg("accent", t) : theme.fg("muted", t)),
+        description: (t) => theme.fg("muted", t),
+        cursor: theme.fg("accent", "→ "),
+        /* SettingsList 自带的提示是英文 "Esc to cancel"; 这里值已经实时下发,
+         * Esc 是「完成」而非取消 —— 直接替换成自己的文案 */
+        hint: () => theme.fg("dim", "  ↑↓ 选择 · Enter/Space 增减 10% · Esc 完成"),
+      },
+      (id, value) => {
+        const pct = clampPct(parseInt(value, 10), 0);
+        if (id === "brightness") brightness = pct;
+        else volume = pct;
+        /* 实时预览: 每改一档立即下发 (未连接时静默跳过) */
+        if (channel.connected) void channel.writeSettings(brightness, volume);
+        tui.requestRender();
+      },
+      () => done({ brightness, volume }),
+    );
+    container.addChild(list);
+
+    return {
+      render: (width: number) => container.render(width).map((l) => truncateToWidth(l, width)),
+      invalidate: () => container.invalidate(),
+      handleInput: (data: string) => {
+        list.handleInput(data);
+        container.invalidate(); // 选中项可能已变 → 丢弃合成缓存
+        tui.requestRender();
+      },
+    };
+  });
+}
+
 /* ---------------- 非 TUI 回退 (标准对话框) ---------------- */
 
 async function showPanelFallback(
@@ -408,7 +508,7 @@ async function showPanelFallback(
 
   const choice = await ctx.ui.select(
     `AgentDock 管理面板 (/dock)\n${status}\n${macroLine}`,
-    ["扫描 / 绑定设备", "编辑宏 KEY2", "编辑宏 KEY3", "测试灯效", "重新连接", "退出"],
+    ["扫描 / 绑定设备", "编辑宏 KEY2", "编辑宏 KEY3", "测试灯效", "设备设置", "重新连接", "退出"],
   );
   if (choice === undefined) return null;
 
@@ -443,14 +543,29 @@ async function showPanelFallback(
 
     case "测试灯效": {
       const s = await ctx.ui.select("测试哪个灯效?", [
+        "demo — 七彩呼吸一次",
         "busy — 绿色呼吸",
         "done — 白色双闪",
         "error — 红色三连闪",
         "idle — 蓝色微亮",
       ]);
       if (s === undefined) return null;
-      const state = s.split(" ")[0]; // "busy" | "done" | ...
+      const state = s.split(" ")[0]; // "demo" | "busy" | ...
       return { kind: "test-led", state };
+    }
+
+    case "设备设置": {
+      const pick = async (title: string, current: number): Promise<number | undefined> => {
+        const opts = ["0%", "10%", "20%", "30%", "40%", "50%", "60%", "70%", "80%", "90%", "100%"];
+        const sel = await ctx.ui.select(`${title} (当前 ${current}%)`, opts);
+        if (sel === undefined) return undefined;
+        return clampPct(parseInt(sel, 10), current);
+      };
+      const brightness = await pick("LED 亮度", config.brightness);
+      if (brightness === undefined) return null;
+      const volume = await pick("蜂鸣器音量", config.volume);
+      if (volume === undefined) return null;
+      return { kind: "settings", brightness, volume };
     }
 
     case "重新连接":

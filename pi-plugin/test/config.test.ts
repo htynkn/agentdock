@@ -29,7 +29,12 @@ afterEach(() => {
   rmSync(home, { recursive: true, force: true });
 });
 
-const DEFAULTS = { preferredDevice: "", macros: ["继续", "不对"] };
+const DEFAULTS = {
+  preferredDevice: "",
+  macros: ["继续", "不对"],
+  brightness: 100,
+  volume: 100,
+};
 
 describe("loadConfig", () => {
   it("配置文件不存在时返回默认值", () => {
@@ -50,7 +55,20 @@ describe("loadConfig", () => {
     expect(mod.loadConfig()).toEqual({
       preferredDevice: "AgentDock-04A8",
       macros: ["继续吧", "重来"],
+      brightness: 100,
+      volume: 100,
     });
+  });
+
+  it("亮度/音量读入并在越界时钳制到 0~100", () => {
+    writeFileSync(configPath, JSON.stringify({ brightness: 55, volume: 30 }), "utf8");
+    expect(mod.loadConfig()).toMatchObject({ brightness: 55, volume: 30 });
+
+    writeFileSync(configPath, JSON.stringify({ brightness: 180, volume: -20 }), "utf8");
+    expect(mod.loadConfig()).toMatchObject({ brightness: 100, volume: 0 });
+
+    writeFileSync(configPath, JSON.stringify({ brightness: "abc", volume: null }), "utf8");
+    expect(mod.loadConfig()).toMatchObject({ brightness: 100, volume: 100 });
   });
 
   it("缺失字段逐项回退默认值", () => {
@@ -77,21 +95,36 @@ describe("loadConfig", () => {
 
 describe("saveConfig", () => {
   it("写入后可被 loadConfig 原样读回", () => {
-    const cfg = { preferredDevice: "AgentDock-04A8", macros: ["继续吧", "重来"] };
+    const cfg = {
+      preferredDevice: "AgentDock-04A8",
+      macros: ["继续吧", "重来"],
+      brightness: 80,
+      volume: 40,
+    };
     mod.saveConfig(cfg);
     expect(JSON.parse(readFileSync(configPath, "utf8"))).toEqual(cfg);
     expect(mod.loadConfig()).toEqual(cfg);
   });
 
   it("写入内容是 2 空格缩进的 JSON (便于手工编辑)", () => {
-    mod.saveConfig({ preferredDevice: "", macros: ["继续", "不对"] });
+    mod.saveConfig({ ...DEFAULTS });
     const raw = readFileSync(configPath, "utf8");
     expect(raw).toContain('\n  "preferredDevice"');
   });
 
   it("覆盖已有配置", () => {
-    mod.saveConfig({ preferredDevice: "A", macros: ["1", "2"] });
-    mod.saveConfig({ preferredDevice: "B", macros: ["3", "4"] });
-    expect(mod.loadConfig()).toEqual({ preferredDevice: "B", macros: ["3", "4"] });
+    mod.saveConfig({ ...DEFAULTS, preferredDevice: "A", macros: ["1", "2"] });
+    mod.saveConfig({ ...DEFAULTS, preferredDevice: "B", macros: ["3", "4"] });
+    expect(mod.loadConfig()).toMatchObject({ preferredDevice: "B", macros: ["3", "4"] });
+  });
+});
+
+describe("clampPct", () => {
+  it("取整并限制在 0~100, 非数字回退", () => {
+    expect(mod.clampPct(42.6, 0)).toBe(43);
+    expect(mod.clampPct(-5, 50)).toBe(0);
+    expect(mod.clampPct(150, 50)).toBe(100);
+    expect(mod.clampPct(undefined, 70)).toBe(70);
+    expect(mod.clampPct("abc", 70)).toBe(70);
   });
 });

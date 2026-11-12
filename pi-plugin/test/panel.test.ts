@@ -21,7 +21,12 @@ import {
   waitFor,
 } from "./helpers.js";
 
-const config = { preferredDevice: "", macros: ["继续吧", "继续"] };
+const config = {
+  preferredDevice: "",
+  macros: ["继续吧", "继续"],
+  brightness: 100,
+  volume: 100,
+};
 const idle: PanelStatus = { busy: false, scrollAvailable: true };
 
 function connectedChannel(rssi = -58): FakeChannel {
@@ -147,7 +152,7 @@ describe("主面板交互", () => {
   it("选「退出」返回 null", async () => {
     const h = new Harness();
     const { result } = await openPanel(h, connectedChannel());
-    for (let i = 0; i < 5; i++) h.current.handleInput!(KEY.down); // → 退出
+    for (let i = 0; i < 6; i++) h.current.handleInput!(KEY.down); // → 退出
     expect(selectedLabel(h.current)).toBe("退出");
     h.current.handleInput!(KEY.enter);
     await expect(result).resolves.toBeNull();
@@ -156,7 +161,7 @@ describe("主面板交互", () => {
   it("选「重新连接」返回 reconnect 动作", async () => {
     const h = new Harness();
     const { result } = await openPanel(h, connectedChannel());
-    for (let i = 0; i < 4; i++) h.current.handleInput!(KEY.down); // → 重新连接
+    for (let i = 0; i < 5; i++) h.current.handleInput!(KEY.down); // → 重新连接
     h.current.handleInput!(KEY.enter);
     await expect(result).resolves.toEqual({ kind: "reconnect" });
   });
@@ -311,25 +316,33 @@ describe("灯效测试流程", () => {
     return { result };
   }
 
-  it("列出四种状态且选中项语义正确", async () => {
+  it("列出五种状态 (含 auto 七彩) 且选中项语义正确", async () => {
     const h = new Harness();
     const ch = connectedChannel();
     await openLed(h, ch);
 
     const text = plainLines(h.current, 72).join("\n");
-    for (const s of ["busy", "done", "error", "idle"]) expect(text).toContain(s);
+    for (const s of ["auto", "busy", "done", "error", "idle"]) expect(text).toContain(s);
     expect(overflowLines(h.current, 72)).toEqual([]);
 
+    h.current.handleInput!(KEY.down);
     h.current.handleInput!(KEY.down);
     h.current.handleInput!(KEY.down); // error
     expect(selectedLabel(h.current)).toContain("error");
   });
 
+  it("auto 在首位, 选中返回 test-led demo (一次七彩)", async () => {
+    const h = new Harness();
+    const { result } = await openLed(h, connectedChannel());
+    expect(selectedLabel(h.current)).toContain("auto");
+    h.current.handleInput!(KEY.enter);
+    await expect(result).resolves.toEqual({ kind: "test-led", state: "demo" });
+  });
+
   it("选中 error 返回 test-led 动作", async () => {
     const h = new Harness();
     const { result } = await openLed(h, connectedChannel());
-    h.current.handleInput!(KEY.down);
-    h.current.handleInput!(KEY.down);
+    for (let i = 0; i < 3; i++) h.current.handleInput!(KEY.down);
     h.current.handleInput!(KEY.enter);
     await expect(result).resolves.toEqual({ kind: "test-led", state: "error" });
   });
@@ -347,6 +360,65 @@ describe("灯效测试流程", () => {
     h.current.handleInput!(KEY.esc);
     await waitFor(() => h.components.length === 3, "取消灯效后未回主面板");
     expect(selectedLabel(h.current)).toBe("扫描 / 绑定设备");
+  });
+});
+
+describe("设备设置流程", () => {
+  async function openSettings(
+    h: Harness,
+    ch: FakeChannel,
+  ): Promise<{ result: Promise<PanelAction | null> }> {
+    const result = showPanel(h.ctx, ch.asChannel(), config, () => idle);
+    await waitFor(() => h.components.length > 0);
+    for (let i = 0; i < 4; i++) h.current.handleInput!(KEY.down); // → 设备设置
+    h.current.handleInput!(KEY.enter);
+    await waitFor(() => h.components.length === 2, "设置页未打开");
+    return { result };
+  }
+
+  it("显示当前亮度/音量, 回车增减 10% 并实时下发", async () => {
+    const h = new Harness();
+    const ch = connectedChannel();
+    await openSettings(h, ch);
+
+    const text = plainLines(h.current, 72).join("\n");
+    expect(text).toContain("LED 亮度");
+    expect(text).toContain("蜂鸣器音量");
+    expect(text).toContain("100%");
+    expect(overflowLines(h.current, 72)).toEqual([]);
+
+    h.current.handleInput!(KEY.enter); // 亮度 100% → 0%
+    expect(ch.settingsWritten.at(-1)).toEqual({ brightness: 0, volume: 100 });
+    expect(plainLines(h.current, 72).join("\n")).toContain("0%");
+  });
+
+  it("Esc 完成并返回最终值", async () => {
+    const h = new Harness();
+    const ch = connectedChannel();
+    const { result } = await openSettings(h, ch);
+
+    h.current.handleInput!(KEY.down); // 选中音量
+    h.current.handleInput!(KEY.enter); // 100% → 0%
+    h.current.handleInput!(KEY.esc);
+
+    await expect(result).resolves.toEqual({ kind: "settings", brightness: 100, volume: 0 });
+  });
+
+  it("未连接时提示调整不生效, 且不写 BLE", async () => {
+    const h = new Harness();
+    const ch = new FakeChannel();
+    await openSettings(h, ch);
+
+    expect(plainLines(h.current, 72).join("\n")).toContain("设备未连接");
+    h.current.handleInput!(KEY.enter);
+    expect(ch.settingsWritten).toEqual([]);
+  });
+
+  it("主菜单描述里显示当前值", async () => {
+    const h = new Harness();
+    await openPanel(h, connectedChannel());
+    for (let i = 0; i < 4; i++) h.current.handleInput!(KEY.down);
+    expect(plainLines(h.current, 72).join("\n")).toContain("亮度 100% · 音量 100%");
   });
 });
 
@@ -368,5 +440,19 @@ describe("非 TUI 回退", () => {
     h.selectAnswers.push(undefined); // 取消
     await showPanel(h.ctx, connectedChannel(-58).asChannel(), config, () => idle);
     expect(h.selects[0]).toMatch(/-58 dBm/);
+  });
+
+  it("回退模式也能设置亮度/音量", async () => {
+    const h = new Harness({ mode: "rpc" });
+    h.selectAnswers.push("设备设置", "80%", "40%");
+    const result = await showPanel(h.ctx, connectedChannel().asChannel(), config, () => idle);
+    expect(result).toEqual({ kind: "settings", brightness: 80, volume: 40 });
+  });
+
+  it("回退模式灯效选项含 auto", async () => {
+    const h = new Harness({ mode: "rpc" });
+    h.selectAnswers.push("测试灯效", "demo — 七彩呼吸一次");
+    const result = await showPanel(h.ctx, connectedChannel().asChannel(), config, () => idle);
+    expect(result).toEqual({ kind: "test-led", state: "demo" });
   });
 });

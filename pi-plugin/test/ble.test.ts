@@ -299,6 +299,24 @@ describe("DeckChannel (IPC 客户端)", () => {
     expect(fakeSpawn).not.toHaveBeenCalled();
   });
 
+  it("writeSettings: 已连接时下发亮度/音量, 未连接时不拉起 worker", async () => {
+    const { ch } = makeChannel();
+    await ch.writeSettings(80, 40);
+    expect(fakeSpawn).not.toHaveBeenCalled();
+
+    void ch.scan(); // 拉起 worker
+    await Promise.resolve();
+    worker.reply({ type: "result", id: worker.requests().at(-1).id, ok: true, devices: [] });
+
+    void ch.writeSettings(80, 40);
+    await Promise.resolve();
+    expect(worker.requests().at(-1)).toMatchObject({
+      op: "writeSettings",
+      brightness: 80,
+      volume: 40,
+    });
+  });
+
   it("spawn 参数: node + worker 路径, cwd 为插件目录", async () => {
     const { ch } = makeChannel();
     const p = ch.scan();

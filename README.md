@@ -224,7 +224,9 @@ hand:
 ```json
 {
   "preferredDevice": "AgentDock-A1B2",
-  "macros": ["继续", "不对"]
+  "macros": ["继续", "不对"],
+  "brightness": 100,
+  "volume": 100
 }
 ```
 
@@ -235,11 +237,22 @@ hand:
 | KEY1 short press | Abort the current agent run (`ctx.abort()`) |
 | KEY1 long press (800 ms) | Toggle buzzer mute (device-local, persisted in NVS) |
 | KEY2 short press | Send macro 0 (default: `继续`); uses steer while the agent is busy |
+| KEY2 long press (800 ms) | Demo mode: Contra riff + seven-colour breathing LED, ~3 s (device-local) |
 | KEY3 short press | Send macro 1 (default: `不对`); uses steer while the agent is busy |
+| KEY3 long press (800 ms) | Toggle the encoder click sound (device-local, persisted in NVS) |
 | Encoder push | Send `继续` |
 | Encoder rotate | Scroll the agent transcript (±3 lines per step); each detent plays a tick |
 
 All short presses play a confirmation melody unless the device is muted.
+
+### Device settings (brightness / volume)
+
+`/dock` → 设备设置 adjusts LED brightness and buzzer volume in 10 % steps and
+pushes each change immediately, so you can watch/listen while adjusting. Both are
+stored in the device's NVS (buzzer volume maps onto the LEDC duty cycle, 0 % =
+silent; brightness scales the existing colours, 100 % = the palette as designed).
+If the device is not connected the panel says so: on the next connect the device
+reports its stored values and those win.
 
 ## LED and sound language
 
@@ -251,6 +264,7 @@ LED states:
 | `busy` | Green breathing |
 | `done` | White double flash, then idle blue |
 | `error` | Red triple flash, then idle blue |
+| `demo` | Seven-colour breathing for ~3 s, then back to the real state |
 | Offline | Very dim blue heartbeat |
 
 Sounds:
@@ -262,11 +276,13 @@ Sounds:
 | Mute on / off | Short-long / long-short tone |
 | Encoder clockwise | Two-step rising tick (2200 → 3000 Hz), one per detent |
 | Encoder counter-clockwise | Two-step falling tick (2200 → 1500 Hz), one per detent |
+| Demo (KEY2 long press) | Contra riff (16th-note arpeggio) |
 
 Encoder ticks are local feedback, so they also play while the device is not
-connected. They are silenced by the mute toggle, and during a melody they are
-inserted at the next note gap instead of cutting it off. Pitch and length live in
-`CLICK_CW` / `CLICK_CCW` in `firmware/main/fx.c`; if your encoder reads the wrong
+connected. KEY3 long press toggles them on their own (persisted in NVS, the same
+way as the mute toggle); while muted nothing sounds at all. During a melody they
+are inserted at the next note gap instead of cutting it off. Pitch and length live
+in `CLICK_CW` / `CLICK_CCW` in `firmware/main/fx.c`; if your encoder reads the wrong
 way round, swap those two tables (or the wiring of A/B).
 
 `done` and `error` are currently LED-only. The `FX_ERROR` and `FX_ATTENTION`
@@ -290,9 +306,11 @@ Messages are UTF-8 JSON:
 {"k":"key","id":3}        // KEY3 short press
 {"k":"key","id":4}        // encoder push
 {"k":"enc","v":-1}        // encoder step (-1 / +1)
+{"k":"cfg","b":100,"v":80,"m":0,"c":1}  // settings snapshot, sent once per connect
 
 // host -> device (STATE)
-{"t":"s","st":"idle"}     // idle | busy | done | error
+{"t":"s","st":"idle"}     // idle | busy | done | error | demo
+{"t":"cfg","b":80,"v":60} // LED brightness / buzzer volume, 0~100 (stored in NVS)
 ```
 
 BLE encryption and bonding are not enabled in the current firmware. The channel
