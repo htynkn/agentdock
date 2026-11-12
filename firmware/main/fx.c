@@ -28,6 +28,23 @@ static const char *TAG = "fx";
 #define GAP_MS           15      /* 音符间断句, 避免连音 */
 #define FX_QUEUE_LEN     4
 
+/* ---------------- 旋钮刻度音参数 (改这里换手感) ----------------
+ * EC11 每格 4 个正交跳变 (见 input.c), 滚动语义按跳变计数, 但人耳要的是
+ * 「一格一声」, 所以两个方向都做成两段短促滑音 (上滑/下滑), 再靠
+ * CLICK_GAP_MS 把同格的连跳合并成一次发声.
+ *
+ *   顺时针 2200Hz → 3000Hz  (上滑, "提")
+ *   逆时针 2200Hz → 1500Hz  (下滑, "沉")
+ * 共同起音让人只注意尾部走向, 方向差异在快转时也能听出来. */
+#define CLICK_GAP_MS     22      /* 两次刻度音最小间隔 (合并同格连跳) */
+#define CLICK_QUEUE_LEN  4       /* 积压上限: 快转时宁可丢也不延迟 */
+typedef struct {
+    uint16_t hz;
+    uint8_t ms;
+} click_step_t;
+static const click_step_t CLICK_CW[]  = { { 2200, 5 }, { 3000, 6 } };
+static const click_step_t CLICK_CCW[] = { { 2200, 5 }, { 1500, 6 } };
+
 /* ---------------- RTTTL 解析 ---------------- */
 /* 格式: 名字:d=默认时长,o=默认八度,b=BPM:音符,音符,...
  * 音符: [时长]音名[#][.][八度]  时长 1/2/4/8/16, 附点 x1.5, p=休止 */
@@ -116,7 +133,10 @@ _Static_assert(sizeof(s_melodies) / sizeof(s_melodies[0]) == FX_COUNT, "旋律�
 typedef struct {
     led_strip_handle_t led;
     QueueHandle_t requests;
+    QueueHandle_t clicks;          /* 旋钮刻度音请求 (int8_t: +1/-1) */
     volatile bool muted;
+    int64_t last_click_us;         /* 上次刻度音时刻, 用于合并连跳 */
+    int8_t last_click_dir;         /* 上次刻度音方向, 换向时立即响应 */
 } fx_ctx_t;
 
 static fx_ctx_t s_fx;
@@ -126,6 +146,35 @@ static void buzzer_hw(bool on)
     /* duty 0 = MOSFET 关断, 物理静音 */
     ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, on ? 512 : 0));
     ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0));
+}
+
+/* 刻度音: 两段短音, 方向决定尾部走向. 静音时完全不出声. */
+static void click_play(int8_t dir)
+{
+    if (s_fx.muted) return;
+    const click_step_t *steps = dir > 0 ? CLICK_CW : CLICK_CCW;
+    for (int i = 0; i < 2; i++) {
+        ESP_ERROR_CHECK(ledc_set_freq(LEDC_LOW_SPEED_MODE, LEDC_TIMER_0, steps[i].hz));
+        buzzer_hw(true);
+        vTaskDelay(pdMS_TO_TICKS(steps[i].ms));
+        buzzer_hw(false);
+    }
+}
+
+/* 取一条刻度音请求播放. 返回是否播放了 (没有请求返回 false). */
+static bool click_drain(void)
+{
+    int8_t dir;
+    if (xQueueReceive(s_fx.clicks, &dir, 0) != pdTRUE) return false;
+    click_play(dir);
+    return true;
+}
+
+/* 丢弃积压的刻度音 (静音切换/旋律结束), 避免延迟到下次才响 */
+static void click_flush(void)
+{
+    int8_t dir;
+    while (xQueueReceive(s_fx.clicks, &dir, 0) == pdTRUE) { }
 }
 
 static void play_notes(const note_t *notes, int count)
@@ -138,7 +187,9 @@ static void play_notes(const note_t *notes, int count)
         vTaskDelay(pdMS_TO_TICKS(notes[i].ms));
         buzzer_hw(false);
         vTaskDelay(pdMS_TO_TICKS(GAP_MS));
+        click_drain();   /* 旋律句读处插播刻度音, 不打断节拍 */
     }
+    click_flush();       /* 旋律整体结束时清掉残留, 保持刻度音实时 */
 }
 
 /* ---------------- LED 状态机 ---------------- */
@@ -237,6 +288,8 @@ void fx_set_agent_state(deck_state_t state)
     ESP_LOGD(TAG, "LED 状态机 → %d", state);
 }
 
+#define FX_IDLE_POLL_MS 10   /* 空转轮询周期 = 刻度音最大延迟 */
+
 static void fx_task(void *arg)
 {
     static note_t notes[RTTTL_MAX_NOTES];
@@ -248,7 +301,11 @@ static void fx_task(void *arg)
             s_led_next_at = now + LED_TICK_MS * 1000;
             apply_led();
         }
-        if (xQueueReceive(s_fx.requests, &id, pdMS_TO_TICKS(LED_TICK_MS)) != pdTRUE) continue;
+        /* 刻度音优先: 10ms 轮询一次, 人手旋转的反馈要在半帧内出声 */
+        if (click_drain()) {
+            continue;
+        }
+        if (xQueueReceive(s_fx.requests, &id, pdMS_TO_TICKS(FX_IDLE_POLL_MS)) != pdTRUE) continue;
         if (id >= FX_COUNT) continue;
 
         if (s_fx.muted && id != FX_MUTED_OFF) {
@@ -276,10 +333,32 @@ void fx_play(fx_melody_t id)
     }
 }
 
+void fx_encoder_click(int32_t dir)
+{
+    if (dir == 0 || s_fx.muted) return;
+
+    const int8_t d = dir > 0 ? 1 : -1;
+    const int64_t now = esp_timer_get_time();
+
+    /* 同一格的 4 个正交跳变合并成一次发声; 换向则立刻放行, 手一抖也能听见 */
+    if (d == s_fx.last_click_dir &&
+        now - s_fx.last_click_us < CLICK_GAP_MS * 1000) {
+        return;
+    }
+    s_fx.last_click_dir = d;
+    s_fx.last_click_us = now;
+    if (xQueueSend(s_fx.clicks, &d, 0) != pdTRUE) {
+        ESP_LOGD(TAG, "刻度音积压, 丢弃 %+d", d);
+    }
+}
+
 void fx_set_muted(bool muted)
 {
     s_fx.muted = muted;
-    if (muted) buzzer_hw(false);   /* 掐断当前正在响的音符 */
+    if (muted) {
+        buzzer_hw(false);   /* 掐断当前正在响的音符 */
+        click_flush();      /* 静音瞬间的待播刻度音一并作废 */
+    }
 }
 
 bool fx_is_muted(void)
@@ -336,6 +415,7 @@ void fx_init(void)
     led_strip_clear(s_fx.led);
 
     s_fx.requests = xQueueCreate(FX_QUEUE_LEN, sizeof(fx_melody_t));
+    s_fx.clicks = xQueueCreate(CLICK_QUEUE_LEN, sizeof(int8_t));
     xTaskCreate(fx_task, "fx", 3072, NULL, 5, NULL);
     ESP_LOGI(TAG, "fx 引擎就绪 (buzzer=IO%d led=IO%d)", BUZZER_GPIO, LED_GPIO);
 }
