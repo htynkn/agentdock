@@ -1,6 +1,6 @@
 {
   "name": "agentdock-pi-plugin",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "AgentDock BLE hardware controller bridge for the pi coding agent",
   "type": "module",
   "license": "MIT",

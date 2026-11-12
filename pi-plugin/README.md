@@ -24,7 +24,7 @@ Install it as a pi package:
 pi install npm:agentdock-pi-plugin
 ```
 
-To pin a version: `pi install npm:agentdock-pi-plugin@0.1.0`. Project scope:
+To pin a version: `pi install npm:agentdock-pi-plugin@0.3.0`. Project scope:
 add `-l`. Remove with `pi remove npm:agentdock-pi-plugin`.
 
 `@stoprocent/noble` is a native BLE binding installed as a dependency. On Linux

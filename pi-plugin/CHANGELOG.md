@@ -9,11 +9,16 @@ See [PUBLISHING.md](./PUBLISHING.md) for the release process.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-12
+
+设备体验四件套 + `/dock` 死锁修复。固件与插件建议同步升级：新增 `cfg` 报文，
+旧固件会忽略它（面板提示「已应用」但设备无反应），旧插件连新固件只是看不到
+设置快照里的 `m` / `c` 字段。
+
 ### Added
 
 - 长按 KEY2 进入演示模式: 播一段号角式 fanfare (三连突进 + 上行号角 + 高音长收),
-  LED 走一圈七彩呼吸 (3 秒后回到
-  agent 真实状态). 设备本地动作, 不依赖 BLE 连接.
+  LED 走一圈七彩呼吸 (3 秒后回到 agent 真实状态). 设备本地动作, 不依赖 BLE 连接.
 - 长按 KEY3 开关旋钮刻度音 (与静音一样写 NVS 持久化).
 - 固件新增亮度/音量设置并持久化到 NVS; 亮度是对原配色的百分比缩放,
   音量映射到蜂鸣器 PWM 占空比 (0% = 无声).
@@ -41,6 +46,12 @@ See [PUBLISHING.md](./PUBLISHING.md) for the release process.
   `agentdock.json.tmp`。
 - 固件日志 `KEYx 长按 %lldms` 一直打成 `长按 ldms`: ESP-IDF 的日志格式化不支持
   `%lld`, 改用 `%d` + `(int)` 强转。
+
+## [0.2.0] - 2026-11-11
+
+BLE 连接稳定性版本: noble 移入子进程, 连接/发现/重连不再卡死。
+
+### Fixed
 
 - Fixed the "device discovered but never connects" failure loop. Root cause: noble's
   `connectAsync()` resolves `undefined` on success, and the timeout guard treated that
@@ -98,5 +109,7 @@ First published version.
 - `@stoprocent/noble` is a native BLE binding: installing it needs a build
   toolchain, plus Bluetooth headers on Linux (`libbluetooth-dev` on Debian/Ubuntu).
 
-[Unreleased]: https://github.com/htynkn/agentdock/compare/pi-plugin-v0.1.0...HEAD
+[Unreleased]: https://github.com/htynkn/agentdock/compare/pi-plugin-v0.3.0...HEAD
+[0.3.0]: https://github.com/htynkn/agentdock/releases/tag/pi-plugin-v0.3.0
+[0.2.0]: https://github.com/htynkn/agentdock/releases/tag/pi-plugin-v0.2.0
 [0.1.0]: https://github.com/htynkn/agentdock/releases/tag/pi-plugin-v0.1.0
