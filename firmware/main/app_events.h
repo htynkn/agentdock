@@ -38,4 +38,5 @@ typedef enum {
     DECK_STATE_BUSY,       /* 绿色呼吸 */
     DECK_STATE_DONE,       /* 白色双闪 → 蓝 */
     DECK_STATE_ERROR,      /* 红色三连闪 → 蓝 */
+    DECK_STATE_DEMO,       /* 七彩呼吸 ~3s 后回上一个状态 (灯效测试「自动」) */
 } deck_state_t;

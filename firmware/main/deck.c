@@ -13,6 +13,7 @@
  */
 #include "deck.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 #include "esp_log.h"
@@ -56,7 +57,19 @@ typedef struct {
 static deck_ctx_t s_deck = { .conn = 0xFFFF };
 static struct ble_gap_event_listener s_deck_listener;
 
-static const char *STATE_NAMES[] = { "idle", "busy", "done", "error" };
+/* STATE char 报文类型:
+ *   {"t":"s","st":"idle|busy|done|error|demo"}    agent 状态 → 灯效
+ *   {"t":"cfg","b":0~100,"v":0~100}               LED 亮度 / 蜂鸣器音量 (落 NVS)
+ */
+static const char *STATE_NAMES[] = { "idle", "busy", "done", "error", "demo" };
+
+/* 从 JSON 里取整型字段 (设备侧只收这几个定长报文, 不引入 JSON 解析器) */
+static int json_int(const char *json, const char *key, int def)
+{
+    const char *p = strstr(json, key);
+    if (!p) return def;
+    return (int)strtol(p + strlen(key), NULL, 10);
+}
 
 /* ---------------- STATE char 写入处理 ---------------- */
 static int on_state_write(uint16_t conn, uint16_t attr,
@@ -67,6 +80,21 @@ static int on_state_write(uint16_t conn, uint16_t attr,
     if (len <= 0 || len >= (int)sizeof(buf)) return BLE_ATT_ERR_INSUFFICIENT_RES;
     memcpy(buf, ctx->om->om_data, len);
     buf[len] = 0;
+
+    /* 设置报文: 亮度/音量, 立即生效并持久化 */
+    if (strstr(buf, "\"t\":\"cfg\"")) {
+        const int b = json_int(buf, "\"b\":", -1);
+        const int v = json_int(buf, "\"v\":", -1);
+        if (b >= 0) fx_set_brightness((uint8_t)b);
+        if (v >= 0 && (uint8_t)v != fx_get_volume()) {
+            fx_set_volume((uint8_t)v);
+            /* 面板每改一档都会发一次 cfg → 用新音量试听一个短音。
+             * 否则调音量时只有 LED 在变, 完全听不出差别 (0% 就是静音)。 */
+            fx_play(FX_PREVIEW);
+        }
+        ESP_LOGI(TAG, "设置 → 亮度 %u%% 音量 %u%%", fx_get_brightness(), fx_get_volume());
+        return 0;
+    }
 
     const char *st = strstr(buf, "\"st\":\"");
     if (!st) {

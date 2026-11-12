@@ -10,6 +10,7 @@
  *   主 → worker: { "op": "scan", "id": 1, "ms": 8000 }
  *              | { "op": "connect", "id": 2, "name": "AgentDock-XX" }
  *              | { "op": "writeState", "state": "busy" }
+ *              | { "op": "writeSettings", "brightness": 80, "volume": 60 }
  *              | { "op": "refreshRssi", "id": 3 }
  *              | { "op": "dispose" }
  *   worker → 主: { "type": "log", "args": [...] }
@@ -277,6 +278,19 @@ async function writeState(state) {
   }
 }
 
+/** 亮度/音量 (0~100): 设备侧落 NVS, 立即生效 */
+async function writeSettings(brightness, volume) {
+  if (!stateChar) return;
+  try {
+    await stateChar.writeAsync(
+      Buffer.from(JSON.stringify({ t: "cfg", b: brightness, v: volume }), "utf8"),
+      false,
+    );
+  } catch (e) {
+    log("设置写入失败:", e?.message ?? e);
+  }
+}
+
 /* ---- 命令循环 ---- */
 
 /* WORKER_DIRECT=1: 跳过 stdin 协议, 直接跑一次 scan+connect (诊断模式,
@@ -331,6 +345,12 @@ async function handle(req) {
       }
       case "writeState":
         await writeState(req.state);
+        /* 回包即使调用方不等: 避免主进程侧留一个永远不 resolve 的 pending */
+        if (typeof req.id === "number") send({ type: "result", id: req.id, ok: true });
+        break;
+      case "writeSettings":
+        await writeSettings(req.brightness, req.volume);
+        if (typeof req.id === "number") send({ type: "result", id: req.id, ok: true });
         break;
       case "refreshRssi": {
         const value = await refreshRssi();

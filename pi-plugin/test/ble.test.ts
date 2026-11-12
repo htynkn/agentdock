@@ -299,6 +299,50 @@ describe("DeckChannel (IPC 客户端)", () => {
     expect(fakeSpawn).not.toHaveBeenCalled();
   });
 
+  /* 回归: 曾经在这里挂死 —— worker 不回 result, 而面板 await 了这个请求,
+   * /dock 的 while 循环卡住后命令永不返回, 表现就是「用着用着打不开」 */
+  it("writeState/writeSettings: 只发不等, 不依赖 worker 回包", async () => {
+    const { ch } = makeChannel();
+    const p = ch.scan();
+    await Promise.resolve();
+    worker.reply({ type: "result", id: worker.requests().at(-1).id, ok: true, devices: [] });
+    await p;
+
+    /* 同步返回布尔值: 调用方不会因为等回包而挂住 */
+    expect(ch.writeState("busy")).toBe(true);
+    expect(ch.writeSettings(70, 30)).toBe(true);
+    expect(worker.requests().slice(-2).map((r) => r.op)).toEqual(["writeState", "writeSettings"]);
+  });
+
+  it("请求超时: worker 一直不回包也会 resolve, 不永久挂起", async () => {
+    vi.useFakeTimers();
+    try {
+      const { ch } = makeChannel();
+      const p = ch.scan(1000);
+      await vi.advanceTimersByTimeAsync(1000 + 12000 + 100);
+      await expect(p).resolves.toEqual([]); /* 超时 → ok=false → 空列表 */
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("writeSettings: 已连接时下发亮度/音量, 未连接时不拉起 worker", async () => {
+    const { ch } = makeChannel();
+    await ch.writeSettings(80, 40);
+    expect(fakeSpawn).not.toHaveBeenCalled();
+
+    void ch.scan(); // 拉起 worker
+    await Promise.resolve();
+    worker.reply({ type: "result", id: worker.requests().at(-1).id, ok: true, devices: [] });
+
+    ch.writeSettings(80, 40);
+    expect(worker.requests().at(-1)).toMatchObject({
+      op: "writeSettings",
+      brightness: 80,
+      volume: 40,
+    });
+  });
+
   it("spawn 参数: node + worker 路径, cwd 为插件目录", async () => {
     const { ch } = makeChannel();
     const p = ch.scan();

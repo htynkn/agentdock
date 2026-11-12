@@ -24,6 +24,9 @@ export interface DeckPeripheralInfo {
 
 type Log = (...args: unknown[]) => void;
 
+/** 请求默认超时: 任何一个 op 卡住都不能让调用方 (面板) 永久挂起 */
+const REQUEST_TIMEOUT_MS = 12000;
+
 interface PendingRequest {
   resolve: (v: any) => void;
 }
@@ -182,7 +185,32 @@ export class DeckChannel {
   }
 
   /** 发送请求并等待 result 消息 (按 id 关联) */
-  private request(op: string, extra: Record<string, unknown> = {}): Promise<any> {
+  /** 发送请求但不等待结果 (fire-and-forget: 写状态/写设置) */
+  private send(op: string, extra: Record<string, unknown> = {}): boolean {
+    const child = this.ensureWorker();
+    const stdin = child.stdin;
+    if (!stdin || !stdin.writable) return false;
+    try {
+      stdin.write(JSON.stringify({ op, ...extra }) + "\n");
+      return true;
+    } catch (e) {
+      this.log("worker 写入失败:", e instanceof Error ? e.message : String(e));
+      return false;
+    }
+  }
+
+  /**
+   * 发送请求并等待 result 消息 (按 id 关联).
+   *
+   * 必须带超时: worker 不回包 (旧版 writeState 就不回) 或已经卡住时,
+   * 裸等 pending 会让调用方永久挂起 —— /dock 面板的 while 循环由这种 await
+   * 驱动, 一旦挂住整个命令就不再返回, 表现就是「/dock 用着用着打不开」。
+   */
+  private request(
+    op: string,
+    extra: Record<string, unknown> = {},
+    timeoutMs = REQUEST_TIMEOUT_MS,
+  ): Promise<any> {
     const child = this.ensureWorker();
     const stdin = child.stdin;
     if (!stdin || !stdin.writable) {
@@ -190,11 +218,24 @@ export class DeckChannel {
     }
     const id = this.nextReqId++;
     return new Promise((resolve) => {
-      this.pending.set(id, { resolve });
+      const timer = setTimeout(() => {
+        if (this.pending.delete(id)) {
+          this.log(`worker 请求超时 (${op}, ${timeoutMs}ms)`);
+          resolve({ ok: false, error: `${op} 超时` });
+        }
+      }, timeoutMs);
+      timer.unref?.(); // 超时守卫不应拖住进程退出
+      this.pending.set(id, {
+        resolve: (v) => {
+          clearTimeout(timer);
+          resolve(v);
+        },
+      });
       try {
         stdin.write(JSON.stringify({ op, id, ...extra }) + "\n");
       } catch (e) {
         this.pending.delete(id);
+        clearTimeout(timer);
         resolve({ ok: false, error: e instanceof Error ? e.message : String(e) });
       }
     });
@@ -204,7 +245,8 @@ export class DeckChannel {
 
   /** 扫描所有 AgentDock 设备 (不连接), 返回按信号强度排序的列表 */
   async scan(timeoutMs = 8000): Promise<DeckPeripheralInfo[]> {
-    const res = await this.request("scan", { ms: timeoutMs });
+    /* 扫描本身要 timeoutMs, 再加分析与回包余量 */
+    const res = await this.request("scan", { ms: timeoutMs }, timeoutMs + REQUEST_TIMEOUT_MS);
     if (!res.ok || res.__workerDead) return [];
     const devices: DeckPeripheralInfo[] = (res.devices ?? [])
       .filter((d: any) => typeof d?.name === "string" && typeof d?.rssi === "number")
@@ -220,7 +262,7 @@ export class DeckChannel {
     if (this._connecting) return "failed";
     this._connecting = true;
     try {
-      const res = await this.request("connect", { name: preferredName ?? "" });
+      const res = await this.request("connect", { name: preferredName ?? "" }, 30000);
       if (!res.ok || res.__workerDead) return "failed";
       const result = res.result;
       if (result !== "ok" && result !== "not_found" && result !== "failed") {
@@ -234,15 +276,26 @@ export class DeckChannel {
 
   /** 主动读取已连接设备的 RSSI; 失败/超时返回缓存值 (无缓存 = null) */
   async refreshRssi(timeoutMs = 1500): Promise<number | null> {
-    const res = await this.request("refreshRssi", {});
+    const res = await this.request("refreshRssi", {}, timeoutMs + 3000);
     if (!res.ok || res.__workerDead) return this._rssi;
     return typeof res.value === "number" ? (this._rssi = res.value) : this._rssi;
   }
 
-  /** 向 STATE char 写 agent 状态 (驱动设备 LED) */
-  async writeState(state: string): Promise<void> {
-    if (!this.worker) return; /* 未连接时静默跳过 (与旧行为一致) */
-    await this.request("writeState", { state });
+  /**
+   * 向 STATE char 写 agent 状态 (驱动设备 LED).
+   *
+   * 只发不等: worker 侧写入成功后已无需回包, 而后台任务没必要为了一个 notify
+   * 阻塞面板 —— 这是「/dock 打不开」那个死锁的根源.
+   */
+  writeState(state: string): boolean {
+    if (!this.worker) return false; /* 未连接时静默跳过 (与旧行为一致) */
+    return this.send("writeState", { state });
+  }
+
+  /** 向 STATE char 写亮度/音量 (0~100, 设备侧落 NVS 并立即生效); 同样只发不等 */
+  writeSettings(brightness: number, volume: number): boolean {
+    if (!this.worker) return false;
+    return this.send("writeSettings", { brightness, volume });
   }
 
   dispose(): void {

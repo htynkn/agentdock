@@ -9,7 +9,38 @@ See [PUBLISHING.md](./PUBLISHING.md) for the release process.
 
 ## [Unreleased]
 
+### Added
+
+- 长按 KEY2 进入演示模式: 播一段号角式 fanfare (三连突进 + 上行号角 + 高音长收),
+  LED 走一圈七彩呼吸 (3 秒后回到
+  agent 真实状态). 设备本地动作, 不依赖 BLE 连接.
+- 长按 KEY3 开关旋钮刻度音 (与静音一样写 NVS 持久化).
+- 固件新增亮度/音量设置并持久化到 NVS; 亮度是对原配色的百分比缩放,
+  音量映射到蜂鸣器 PWM 占空比 (0% = 无声).
+- BLE 新增两类报文: `{"t":"cfg","b":..,"v":..}` (host→device 设置) 与
+  `{"k":"cfg","b":..,"v":..,"m":..,"c":..}` (device→host 设置快照, 连接后立即推一次);
+  STATE 状态新增 `demo` (七彩呼吸一次).
+- `/dock` 面板新增「设备设置」: 用 SettingsList 调 LED 亮度与音量, 每改一档
+  立即下发 (可边调边看/听), Esc 收尾. 未连接时明确提示调整不会生效.
+  **改音量会用一个短音试听新响度** (设备侧 `FX_PREVIEW`), 否则只有灯在变;
+  设备静音时面板会提醒试听音听不到 (长按 KEY1 解除).
+- `/dock` 灯效测试新增 `auto`: 一次展示七彩颜色 (设备侧 3 秒后自动回当前状态).
+- 固件 LED 改由独立任务渲染: 旋律播放时灯光不再冻结 (演示模式需要声光同时).
+
 ### Fixed
+
+- **`/dock` 用一段时间后就打不开**. 根因: worker 侧 `writeState` 不回 `result`,
+  而主进程的 `request()` 只在收到 `result` 时 resolve, 且没有任何超时。于是
+  `/dock` 里 `await channel.writeState()` (测试灯效) 与新增的
+  `await channel.writeSettings()` (设备设置) 永久挂起 → 面板的 `while` 循环停在
+  半途 → 命令 handler 永不返回, 之后的 `/dock` 就全部失效。现在写操作改为纯
+  发送不等回包 (`send()`, 同步返回 boolean), worker 也会补回 `result`;`request()`
+  增加按 op 区分的超时兜底, 任何请求都不会再永久挂起。
+- `/dock` 面板增加重入保护: 同时只允许一份模态循环, 异常退出也不会把状态锁死。
+- `saveConfig` 改为真正的原子写 (`writeFileSync` + `renameSync`), 不再残留
+  `agentdock.json.tmp`。
+- 固件日志 `KEYx 长按 %lldms` 一直打成 `长按 ldms`: ESP-IDF 的日志格式化不支持
+  `%lld`, 改用 `%d` + `(int)` 强转。
 
 - Fixed the "device discovered but never connects" failure loop. Root cause: noble's
   `connectAsync()` resolves `undefined` on success, and the timeout guard treated that
