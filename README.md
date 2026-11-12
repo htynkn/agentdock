@@ -237,7 +237,7 @@ hand:
 | KEY1 short press | Abort the current agent run (`ctx.abort()`) |
 | KEY1 long press (800 ms) | Toggle buzzer mute (device-local, persisted in NVS) |
 | KEY2 short press | Send macro 0 (default: `继续`); uses steer while the agent is busy |
-| KEY2 long press (800 ms) | Demo mode: Contra riff + seven-colour breathing LED, ~3 s (device-local) |
+| KEY2 long press (800 ms) | Demo mode: bugle fanfare + seven-colour breathing LED, ~3 s (device-local) |
 | KEY3 short press | Send macro 1 (default: `不对`); uses steer while the agent is busy |
 | KEY3 long press (800 ms) | Toggle the encoder click sound (device-local, persisted in NVS) |
 | Encoder push | Send `继续` |
@@ -279,7 +279,7 @@ Sounds:
 | Mute on / off | Short-long / long-short tone |
 | Encoder clockwise | Two-step rising tick (2200 → 3000 Hz), one per detent |
 | Encoder counter-clockwise | Two-step falling tick (2200 → 1500 Hz), one per detent |
-| Demo (KEY2 long press) | Contra riff (16th-note arpeggio) |
+| Demo (KEY2 long press) | Bugle fanfare: three stabs, rising triad, held top note |
 | Volume change (`/dock`) | Two-note preview at the new volume (~160 ms) |
 
 Encoder ticks are local feedback, so they also play while the device is not

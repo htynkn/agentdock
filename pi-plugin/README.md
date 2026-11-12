@@ -77,7 +77,7 @@ local ones.
 | KEY1 short press | Abort the current run |
 | KEY1 long press | Toggle the device buzzer mute (device-local) |
 | KEY2 short press | Send macro 0 (default `继续`) |
-| KEY2 long press | Demo mode: Contra riff + seven-colour breathing LED (3 s, device-local) |
+| KEY2 long press | Demo mode: bugle fanfare + seven-colour breathing LED (3 s, device-local) |
 | KEY3 short press | Send macro 1 (default `不对`) |
 | KEY3 long press | Toggle the encoder click sound (device-local) |
 | Encoder push | Send `继续` |

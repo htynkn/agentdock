@@ -128,9 +128,11 @@ static const char *s_melodies[FX_COUNT] = {
     [FX_MUTED_ON]   = "muteon:d=8,o=6,b=250:e6,4e6",                 /* 一短一长 */
     [FX_MUTED_OFF]  = "muteoff:d=8,o=6,b=250:4e6,e6",                /* 一长一短 */
     [FX_DISCONNECT] = "offline:d=4,o=4,b=200:c4",                    /* 单长低音 */
-    /* 魂斗罗 (Contra) 丛林关主 riff: 16 分音符琶音, 4 小节 ≈ 1.7s */
-    [FX_DEMO]       = "contra:d=16,o=4,b=190:a,a,a,a,c5,d5,e5,d5,c5,b4,c5,"
-                      "a,a,a,a,g4,a4,b4,a4,g4,a4",
+    /* 演示 fanfare (≈2s): 三连突进 → F/A/C 上行号角 → 回落 → 高音长收。
+     * 为什么不是魂斗罗 BGM 旋律: 单音蜂鸣器只能弹一条线, 而 Contra 那类战斗
+     * BGM 的辨识度很大程度来自贝斯+鼓的律动, 抽出来只剩一段无意义的 8-bit 跑动。
+     * 号角式短句自带气息, 一听就是「8-bit 战争/胜利」。改曲子只改这个字符串。 */
+    [FX_DEMO]       = "fanfare:d=16,o=5,b=170:c5,c5,c5,8f5,8a5,8c6,8a5,8f5,2c6",
     /* 音量试听: 两个短音 (约 160ms), 响度差异最好辩 */
     [FX_PREVIEW]    = "preview:d=16,o=5,b=220:a5,c6",
 };
@@ -361,7 +363,7 @@ void fx_set_agent_state(deck_state_t state)
 void fx_demo_start(void)
 {
     fx_set_agent_state(DECK_STATE_DEMO);   /* 七彩呼吸 3s */
-    fx_play(FX_DEMO);                       /* 魂斗罗 riff */
+    fx_play(FX_DEMO);                       /* 号角 fanfare */
 }
 
 #define FX_IDLE_POLL_MS 10   /* 空转轮询周期 = 刻度音最大延迟 */

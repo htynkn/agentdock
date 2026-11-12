@@ -9,7 +9,7 @@
  *   KEY1 短按   → 打断 agent (pi.abort)
  *   KEY1 长按   → 静音切换 (NVS 持久化, 本地音效)
  *   KEY2 短按   → 宏「继续」
- *   KEY2 长按   → 演示模式: 魂斗罗旋律 + 七彩呼吸灯 (3s)
+ *   KEY2 长按   → 演示模式: 号角 fanfare + 七彩呼吸灯 (3s)
  *   KEY3 短按   → 「继续」
  *   KEY3 长按   → 旋钮刻度音开关 (NVS 持久化)
  *   旋钮旋转    → 滚动 agent 输出 (本地齿轮声, 顺时针升调/逆时针降调)
@@ -95,7 +95,7 @@ static void handle_event(const input_event_t *ev)
             fx_play(muted ? FX_MUTED_ON : FX_MUTED_OFF);
             break;
         }
-        case KEY_ID_2:     /* 演示: 魂斗罗 + 七彩呼吸 (本地反馈, 不依赖连接) */
+        case KEY_ID_2:     /* 演示: 号角 fanfare + 七彩呼吸 (本地反馈, 不依赖连接) */
             ESP_LOGI(TAG, "动作: 演示模式");
             fx_demo_start();
             break;

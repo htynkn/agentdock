@@ -11,7 +11,8 @@ See [PUBLISHING.md](./PUBLISHING.md) for the release process.
 
 ### Added
 
-- 长按 KEY2 进入演示模式: 播放一段魂斗罗旋律, LED 走一圈七彩呼吸 (3 秒后回到
+- 长按 KEY2 进入演示模式: 播一段号角式 fanfare (三连突进 + 上行号角 + 高音长收),
+  LED 走一圈七彩呼吸 (3 秒后回到
   agent 真实状态). 设备本地动作, 不依赖 BLE 连接.
 - 长按 KEY3 开关旋钮刻度音 (与静音一样写 NVS 持久化).
 - 固件新增亮度/音量设置并持久化到 NVS; 亮度是对原配色的百分比缩放,
