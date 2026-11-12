@@ -1,0 +1,35 @@
+firmware/main/fx.h
+  s_b29193b867c127::t_01231eec3b31cb 29
+firmware/main/input.c
+  s_b29193b867c127::t_ddf3a186aa73e9 108
+firmware/main/deck.c
+  s_b29193b867c127::t_e62d34e7b49541 89-94
+firmware/main/fx.c
+  s_b29193b867c127::t_45f76771e52fd6 134-135
+pi-plugin/index.ts
+  s_b29193b867c127::t_6414a6ff2c7e5d 44-46,111-112,186-187
+pi-plugin/test/panel.test.ts
+  s_b29193b867c127::t_4321b7855f0874 370,372,424-452
+pi-plugin/panel.ts
+  s_b29193b867c127::t_31a28b28c314e0 40-43,94,429,439,446-456,466,473
+README.md
+  s_b29193b867c127::t_961b364470ff1f 251-258,283
+pi-plugin/CHANGELOG.md
+  s_b29193b867c127::t_fe9ba6ee9e6bae 24-25,41-42
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4311923ede514fd888bbde15fc050dbe2476e737",
+  "prompts": {},
+  "sessions": {
+    "s_b29193b867c127": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1cfd6-b21b-73e7-add8-9c9a589aeae3",
+        "model": "deepseek-flash"
+      },
+      "human_author": "htynkn <htynkn@gmail.com>"
+    }
+  }
+}

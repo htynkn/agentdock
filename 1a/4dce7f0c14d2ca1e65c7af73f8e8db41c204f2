@@ -1,0 +1,73 @@
+firmware/main/main.c
+  s_b29193b867c127::t_d780fdb0e3b1b5 15,114,116,121
+  s_b29193b867c127::t_51e5939cb72aaf 12,14,49-58,90-91,96-110,145,174
+firmware/main/fx.c
+  s_b29193b867c127::t_15c04b823ccba8 33-49,141,142-143,160-162,164-188,199,201,365-366,372-376,404-405,407-422,426-429,520
+  s_b29193b867c127::t_edfe79e96f8cc0 204,210,213-227,232-266,268,274-290,316-324,332-342,345,347,352-355,359-364,379
+  s_b29193b867c127::t_4e271f5a845061 406,425,434-466,471,474,521,523-525
+  s_b29193b867c127::t_14c9d15090e8c4 18,23,131-133,148,151-154,156,163,192
+README.md
+  s_b29193b867c127::t_deb63076e85497 244,277-278,280-281,286
+  s_b29193b867c127::t_3337e7abf9db31 227-229,282-285
+  s_b29193b867c127::t_a16466387b2167 240,242,248-256,267,279,309,312-313
+firmware/main/fx.h
+  s_b29193b867c127::t_fa688ac8d8b894 9,37-40
+  s_b29193b867c127::t_ab27d593343a28 41
+  s_b29193b867c127::t_20f1e33ed1df4b 4-7,10,25-26,28,42,46-57,65-66,68-70
+firmware/main/config.c
+  s_b29193b867c127::t_a8dd1ebec5a734 3-4,9,12-28,30-37,40,45-47,49-55,57-60,63,66,68-71,74,77-100
+firmware/main/app_events.h
+  s_b29193b867c127::t_fe1d77611b9248 41
+pi-plugin/ble.ts
+  s_b29193b867c127::t_4c58a5ad096c0b 248-253
+pi-plugin/config.ts
+  s_b29193b867c127::t_963894d1f8cbe3 40,42-47
+  s_b29193b867c127::t_02b02c1fb0b7c6 5-8,22-25,28-30,34-35,41,48-51,58-59
+pi-plugin/panel.ts
+  s_b29193b867c127::t_4259e850ffa06c 6-7,19-20,25,32,89-93,171-176,229-230
+  s_b29193b867c127::t_4749a559ad80ea 382-386,416-496,511,546,553,557-569
+  s_b29193b867c127::t_722c13e19f91c3 570
+pi-plugin/test/config.test.ts
+  s_b29193b867c127::t_6aeccf51f09f42 72
+  s_b29193b867c127::t_60664cbe25b195 32-37,58-59,63-71,73,98-103,110,116-128
+pi-plugin/test/helpers.ts
+  s_b29193b867c127::t_1b39107d1ce4a7 83,118-119
+  s_b29193b867c127::t_c30544de2a62cb 120-121
+pi-plugin/CHANGELOG.md
+  s_b29193b867c127::t_56b29e6b9443bb 12-26
+pi-plugin/test/ble.test.ts
+  s_b29193b867c127::t_8be454ed00ee85 302-319
+firmware/main/config.h
+  s_b29193b867c127::t_c9ed04e36b32bc 4-8,13,17-31,33-37
+pi-plugin/ble-worker.mjs
+  s_b29193b867c127::t_e652997a5486f4 13,281-293,349-350
+  s_b29193b867c127::t_9007e878e801ef 351
+pi-plugin/index.ts
+  s_b29193b867c127::t_a74e28e38c2d38 16,93-106,202-211
+  s_b29193b867c127::t_b74cf4f2466bde 212-214
+pi-plugin/README.md
+  s_b29193b867c127::t_82f5b315a69fbf 54-55,63-65,69-72,80,82,94,116,119-120
+pi-plugin/test/panel.test.ts
+  s_b29193b867c127::t_44d9b21540428d 366-424,444-457
+  s_b29193b867c127::t_0fba0d28e2228a 24-29,155,164,319,325,328,334-341,345
+firmware/main/deck.c
+  s_b29193b867c127::t_6da8fb4ea4c7ec 16
+  s_b29193b867c127::t_bc2951bd9c0fe5 60-72,84-92
+  s_b29193b867c127::t_a688be2feb3177 93
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1a4dce7f0c14d2ca1e65c7af73f8e8db41c204f2",
+  "prompts": {},
+  "sessions": {
+    "s_b29193b867c127": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1cfd6-b21b-73e7-add8-9c9a589aeae3",
+        "model": "deepseek-flash"
+      },
+      "human_author": "htynkn <htynkn@gmail.com>"
+    }
+  }
+}

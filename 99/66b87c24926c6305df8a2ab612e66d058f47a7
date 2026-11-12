@@ -1,0 +1,29 @@
+README.md
+  s_b29193b867c127::t_8cab0f5e7569b7 282
+  s_b29193b867c127::t_3c66376c1341a9 240
+firmware/main/main.c
+  s_b29193b867c127::t_3c66376c1341a9 12,98
+firmware/main/fx.c
+  s_b29193b867c127::t_e27211012cf174 131-135
+  s_b29193b867c127::t_3c66376c1341a9 366
+pi-plugin/CHANGELOG.md
+  s_b29193b867c127::t_45c906f55b0013 14-15
+pi-plugin/README.md
+  s_b29193b867c127::t_3c66376c1341a9 80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9966b87c24926c6305df8a2ab612e66d058f47a7",
+  "prompts": {},
+  "sessions": {
+    "s_b29193b867c127": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1cfd6-b21b-73e7-add8-9c9a589aeae3",
+        "model": "deepseek-flash"
+      },
+      "human_author": "htynkn <htynkn@gmail.com>"
+    }
+  }
+}
