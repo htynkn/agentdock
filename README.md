@@ -248,11 +248,14 @@ All short presses play a confirmation melody unless the device is muted.
 ### Device settings (brightness / volume)
 
 `/dock` → 设备设置 adjusts LED brightness and buzzer volume in 10 % steps and
-pushes each change immediately, so you can watch/listen while adjusting. Both are
-stored in the device's NVS (buzzer volume maps onto the LEDC duty cycle, 0 % =
-silent; brightness scales the existing colours, 100 % = the palette as designed).
-If the device is not connected the panel says so: on the next connect the device
-reports its stored values and those win.
+pushes each change immediately, so you can watch/listen while adjusting: the LED
+re-renders within 100 ms, and **every volume change plays a short preview tone at
+the new level** (so 0 % is audibly silent). Both are stored in the device's NVS
+(buzzer volume maps onto the LEDC duty cycle; brightness scales the existing
+colours, 100 % = the palette as designed). If the device is muted the panel warns
+that the preview cannot be heard (long-press KEY1 to unmute); if the device is not
+connected the panel says so, and on the next connect the device reports its stored
+values and those win.
 
 ## LED and sound language
 
@@ -277,6 +280,7 @@ Sounds:
 | Encoder clockwise | Two-step rising tick (2200 → 3000 Hz), one per detent |
 | Encoder counter-clockwise | Two-step falling tick (2200 → 1500 Hz), one per detent |
 | Demo (KEY2 long press) | Contra riff (16th-note arpeggio) |
+| Volume change (`/dock`) | Two-note preview at the new volume (~160 ms) |
 
 Encoder ticks are local feedback, so they also play while the device is not
 connected. KEY3 long press toggles them on their own (persisted in NVS, the same

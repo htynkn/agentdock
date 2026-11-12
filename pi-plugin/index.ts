@@ -41,6 +41,9 @@ export default function agentDeckExtension(pi: ExtensionAPI) {
   const scroller = new DeckScroller();
   let disposed = false;
   let panelOpen = false;         // /dock 面板重入保护 (模态循环只允许一份)
+  /* 设备侧开关状态 (来自连接时的 cfg 快照, 不落盘: 设备 NVS 是真源) */
+  let deviceMuted = false;
+  let deviceClickSound = true;
   let reconnectTimer: NodeJS.Timeout | null = null;
   let busy = false;
   let transientUntil = 0;        // done/error 特效期间不覆盖 LED
@@ -105,6 +108,8 @@ export default function agentDeckExtension(pi: ExtensionAPI) {
         `设备设置: 亮度 ${brightness}% · 音量 ${volume}%` +
           `${msg.m ? " · 静音开" : ""}${msg.c === 0 ? " · 刻度音关" : ""}`,
       );
+      if (typeof msg.m === "number") deviceMuted = msg.m !== 0;
+      if (typeof msg.c === "number") deviceClickSound = msg.c !== 0;
     } else if (msg.k === "enc") {
       const ok = scroller.scrollByInput(Number(msg.v) || 0, log);
       if (!ok) log(`旋钮滚动 ${msg.v} (TUI 滚动不可用, 需 fullscreen 模式)`);
@@ -178,6 +183,8 @@ export default function agentDeckExtension(pi: ExtensionAPI) {
         const action: PanelAction | null = await showPanel(ctx, channel, config, () => ({
           busy,
           scrollAvailable: scroller.available,
+          muted: deviceMuted,
+          clickSound: deviceClickSound,
         }));
         if (!action || action.kind === "exit") break;
 

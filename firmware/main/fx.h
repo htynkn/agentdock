@@ -26,6 +26,7 @@ typedef enum {
     FX_MUTED_OFF,      /* 静音/刻度音 关: 一长一短 */
     FX_DISCONNECT,     /* 断连: 单长低音 */
     FX_DEMO,           /* 演示模式: 魂斗罗 riff (KEY2 长按) */
+    FX_PREVIEW,        /* 音量试听: 用当前音量放一个短音 (面板调音量时) */
     FX_COUNT,
 } fx_melody_t;
 

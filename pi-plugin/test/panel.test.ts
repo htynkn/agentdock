@@ -367,8 +367,9 @@ describe("设备设置流程", () => {
   async function openSettings(
     h: Harness,
     ch: FakeChannel,
+    status: () => PanelStatus = () => idle,
   ): Promise<{ result: Promise<PanelAction | null> }> {
-    const result = showPanel(h.ctx, ch.asChannel(), config, () => idle);
+    const result = showPanel(h.ctx, ch.asChannel(), config, status);
     await waitFor(() => h.components.length > 0);
     for (let i = 0; i < 4; i++) h.current.handleInput!(KEY.down); // → 设备设置
     h.current.handleInput!(KEY.enter);
@@ -419,6 +420,35 @@ describe("设备设置流程", () => {
     await openPanel(h, connectedChannel());
     for (let i = 0; i < 4; i++) h.current.handleInput!(KEY.down);
     expect(plainLines(h.current, 72).join("\n")).toContain("亮度 100% · 音量 100%");
+  });
+
+  it("音量项提示「改一档立即试听」", async () => {
+    const h = new Harness();
+    await openSettings(h, connectedChannel());
+    h.current.handleInput!(KEY.down); // 选中音量
+    expect(plainLines(h.current, 72).join("\n")).toContain("立即试听");
+  });
+
+  it("设备静音时提醒听不到试听音", async () => {
+    const h = new Harness();
+    await openSettings(h, connectedChannel(), () => ({ ...idle, muted: true, clickSound: true }));
+    const text = plainLines(h.current, 72).join("\n");
+    expect(text).toContain("设备静音中");
+    expect(text).toContain("长按 KEY1");
+    expect(text).toContain("静音 开");
+    expect(text).toContain("刻度音 开");
+  });
+
+  it("未静音时不出现静音警告", async () => {
+    const h = new Harness();
+    await openSettings(h, connectedChannel(), () => ({
+      ...idle,
+      muted: false,
+      clickSound: false,
+    }));
+    const text = plainLines(h.current, 72).join("\n");
+    expect(text).not.toContain("设备静音中");
+    expect(text).toContain("刻度音 关");
   });
 });
 

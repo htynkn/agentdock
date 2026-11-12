@@ -86,7 +86,12 @@ static int on_state_write(uint16_t conn, uint16_t attr,
         const int b = json_int(buf, "\"b\":", -1);
         const int v = json_int(buf, "\"v\":", -1);
         if (b >= 0) fx_set_brightness((uint8_t)b);
-        if (v >= 0) fx_set_volume((uint8_t)v);
+        if (v >= 0 && (uint8_t)v != fx_get_volume()) {
+            fx_set_volume((uint8_t)v);
+            /* 面板每改一档都会发一次 cfg → 用新音量试听一个短音。
+             * 否则调音量时只有 LED 在变, 完全听不出差别 (0% 就是静音)。 */
+            fx_play(FX_PREVIEW);
+        }
         ESP_LOGI(TAG, "设置 → 亮度 %u%% 音量 %u%%", fx_get_brightness(), fx_get_volume());
         return 0;
     }

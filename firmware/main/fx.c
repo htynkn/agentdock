@@ -131,6 +131,8 @@ static const char *s_melodies[FX_COUNT] = {
     /* 魂斗罗 (Contra) 丛林关主 riff: 16 分音符琶音, 4 小节 ≈ 1.7s */
     [FX_DEMO]       = "contra:d=16,o=4,b=190:a,a,a,a,c5,d5,e5,d5,c5,b4,c5,"
                       "a,a,a,a,g4,a4,b4,a4,g4,a4",
+    /* 音量试听: 两个短音 (约 160ms), 响度差异最好辩 */
+    [FX_PREVIEW]    = "preview:d=16,o=5,b=220:a5,c6",
 };
 _Static_assert(sizeof(s_melodies) / sizeof(s_melodies[0]) == FX_COUNT, "旋律表与枚举不齐");
 

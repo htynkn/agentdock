@@ -37,6 +37,10 @@ export type PanelAction =
 export interface PanelStatus {
   busy: boolean;
   scrollAvailable: boolean;
+  /** 设备侧静音状态 (来自连接时的 cfg 快照; undefined = 未知) */
+  muted?: boolean;
+  /** 设备侧旋钮刻度音状态 (同上) */
+  clickSound?: boolean;
 }
 
 /* ---------------- 公共入口 ---------------- */
@@ -87,7 +91,7 @@ async function showPanelTui(
         continue; // 取消 → 回主面板
       }
       case "settings": {
-        const next = await settingsFlow(ctx, channel, config);
+        const next = await settingsFlow(ctx, channel, config, getStatus());
         if (next) return { kind: "settings", ...next };
         continue;
       }
@@ -422,6 +426,7 @@ function settingsFlow(
   ctx: ExtensionContext,
   channel: DeckChannel,
   config: DeckConfig,
+  device: PanelStatus = { busy: false, scrollAvailable: false },
 ): Promise<{ brightness: number; volume: number } | null> {
   return ctx.ui.custom<{ brightness: number; volume: number } | null>((tui, theme, _kb, done) => {
     const container = new Container();
@@ -431,13 +436,24 @@ function settingsFlow(
     container.addChild(
       line(
         theme.bold(theme.fg("accent", "设备设置")) +
-          theme.fg("muted", "  改一下就生效, 并写入设备 NVS"),
+          theme.fg("muted", "  改一档立即生效, 并写入设备"),
       ),
     );
     if (!channel.connected) {
       container.addChild(
         line(theme.fg("warning", "⚠ 设备未连接: 调整不会生效, 连上后以设备当前值为准")),
       );
+    } else if (device.muted) {
+      /* 静音是设备侧总开关: 这时调音量听不到, 必须先解除静音 */
+      container.addChild(
+        line(theme.fg("warning", "⚠ 设备静音中: 试听音听不到, 长按 KEY1 解除静音")),
+      );
+    }
+    const flags: string[] = [];
+    if (device.muted !== undefined) flags.push(device.muted ? "静音 开" : "静音 关");
+    if (device.clickSound !== undefined) flags.push(device.clickSound ? "刻度音 开" : "刻度音 关");
+    if (flags.length) {
+      container.addChild(line(theme.fg("dim", `设备状态: ${flags.join(" · ")}`)));
     }
     container.addChild(new Rule((s) => theme.fg("borderMuted", s)));
 
@@ -447,14 +463,14 @@ function settingsFlow(
         label: "LED 亮度",
         currentValue: `${brightness}%`,
         values: PCT_VALUES,
-        description: "WS2812 明暗 (0% = 全灭)",
+        description: "WS2812 明暗, 改一档立即生效 (0% = 全灭)",
       },
       {
         id: "volume",
         label: "蜂鸣器音量",
         currentValue: `${volume}%`,
         values: PCT_VALUES,
-        description: "提示音 / 刻度音响度 (0% = 无声)",
+        description: "改一档立即试听一次 (0% = 无声)",
       },
     ];
 

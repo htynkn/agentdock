@@ -21,6 +21,8 @@ See [PUBLISHING.md](./PUBLISHING.md) for the release process.
   STATE 状态新增 `demo` (七彩呼吸一次).
 - `/dock` 面板新增「设备设置」: 用 SettingsList 调 LED 亮度与音量, 每改一档
   立即下发 (可边调边看/听), Esc 收尾. 未连接时明确提示调整不会生效.
+  **改音量会用一个短音试听新响度** (设备侧 `FX_PREVIEW`), 否则只有灯在变;
+  设备静音时面板会提醒试听音听不到 (长按 KEY1 解除).
 - `/dock` 灯效测试新增 `auto`: 一次展示七彩颜色 (设备侧 3 秒后自动回当前状态).
 - 固件 LED 改由独立任务渲染: 旋律播放时灯光不再冻结 (演示模式需要声光同时).
 
@@ -36,6 +38,8 @@ See [PUBLISHING.md](./PUBLISHING.md) for the release process.
 - `/dock` 面板增加重入保护: 同时只允许一份模态循环, 异常退出也不会把状态锁死。
 - `saveConfig` 改为真正的原子写 (`writeFileSync` + `renameSync`), 不再残留
   `agentdock.json.tmp`。
+- 固件日志 `KEYx 长按 %lldms` 一直打成 `长按 ldms`: ESP-IDF 的日志格式化不支持
+  `%lld`, 改用 `%d` + `(int)` 强转。
 
 - Fixed the "device discovered but never connects" failure loop. Root cause: noble's
   `connectAsync()` resolves `undefined` on success, and the timeout guard treated that

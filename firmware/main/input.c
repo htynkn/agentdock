@@ -105,7 +105,7 @@ static void keys_poll(QueueHandle_t q)
         } else {
             const int64_t held = now - k->pressed_at;
             if (held >= INPUT_LONG_PRESS_MS * 1000) {
-                ESP_LOGI(TAG, "%s 长按 %lldms", k->name, (long long)(held / 1000));
+                ESP_LOGI(TAG, "%s 长按 %dms", k->name, (int)(held / 1000));
                 emit(q, IN_EVT_KEY_LONG, k->id);
             } else {
                 ESP_LOGI(TAG, "%s 短按", k->name);
