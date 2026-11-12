@@ -3,6 +3,7 @@
  *
  * 单一后台任务消费请求, 所有 API 非阻塞; 静音开关最高优先级 (duty=0 物理静音).
  * 旋律为 RTTTL 文本 (诺基亚铃声格式), 直接改字符串即可换音效.
+ * 旋钮刻度音不走 RTTTL (11ms 的双段滑音), 参数见 fx.c 的 CLICK_CW/CLICK_CCW.
  */
 #pragma once
 
@@ -27,6 +28,11 @@ void fx_init(void);
 
 /* 播放事件音效 (非阻塞, 请求入队; 队列满则丢弃并记日志) */
 void fx_play(fx_melody_t id);
+
+/* 旋钮刻度音 (非阻塞): dir > 0 顺时针 (上滑), dir < 0 逆时针 (下滑).
+ * 每格会自动合并成一次发声, 静音时无声; 与事件音效共用 fx 任务, 用户
+ * 旋转的优先级高于正在播放的旋律 (在旋律句读处插播). */
+void fx_encoder_click(int32_t dir);
 
 /* 静音 (立即停止当前播放并静音后续请求中的发声部分) */
 void fx_set_muted(bool muted);

@@ -10,7 +10,7 @@
  *   KEY1 长按   → 静音切换 (NVS 持久化, 本地音效)
  *   KEY2 短按   → 宏「继续」
  *   KEY3 短按   → 「继续」
- *   旋钮旋转    → 滚动 agent 输出
+ *   旋钮旋转    → 滚动 agent 输出 (本地齿轮声, 顺时针升调/逆时针降调)
  *   旋钮按压    → 「继续」
  *
  * 数据流: input 任务 → 事件队列 → app 任务分发 (deck / fx / config)
@@ -84,12 +84,14 @@ static void handle_event(const input_event_t *ev)
         }
         break;
 
-    case IN_EVT_ENC_STEP:
+    case IN_EVT_ENC_STEP: {
         ESP_LOGD(TAG, "动作: 滚动 %+ld", (long)ev->value);
+        fx_encoder_click(ev->value);   /* 本地刻度音: 顺/逆时针音高不同 */
         char buf[40];
         snprintf(buf, sizeof(buf), "{\"k\":\"enc\",\"v\":%ld}", (long)ev->value);
         deck_send_event(buf);
         break;
+    }
 
     default:
         break;

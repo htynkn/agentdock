@@ -237,7 +237,7 @@ hand:
 | KEY2 short press | Send macro 0 (default: `继续`); uses steer while the agent is busy |
 | KEY3 short press | Send macro 1 (default: `不对`); uses steer while the agent is busy |
 | Encoder push | Send `继续` |
-| Encoder rotate | Scroll the agent transcript (±3 lines per step) |
+| Encoder rotate | Scroll the agent transcript (±3 lines per step); each detent plays a tick |
 
 All short presses play a confirmation melody unless the device is muted.
 
@@ -260,6 +260,14 @@ Sounds:
 | Boot | Mario power-up arpeggio |
 | Key short press / deck connect | Mario coin |
 | Mute on / off | Short-long / long-short tone |
+| Encoder clockwise | Two-step rising tick (2200 → 3000 Hz), one per detent |
+| Encoder counter-clockwise | Two-step falling tick (2200 → 1500 Hz), one per detent |
+
+Encoder ticks are local feedback, so they also play while the device is not
+connected. They are silenced by the mute toggle, and during a melody they are
+inserted at the next note gap instead of cutting it off. Pitch and length live in
+`CLICK_CW` / `CLICK_CCW` in `firmware/main/fx.c`; if your encoder reads the wrong
+way round, swap those two tables (or the wiring of A/B).
 
 `done` and `error` are currently LED-only. The `FX_ERROR` and `FX_ATTENTION`
 melodies are already defined in `firmware/main/fx.c` for future state sounds.
