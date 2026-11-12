@@ -1,0 +1,26 @@
+firmware/main/main.c
+  s_b29193b867c127::t_d780fdb0e3b1b5 13,87,89,94
+firmware/main/fx.c
+  s_b29193b867c127::t_15c04b823ccba8 31-47,136,138-139,151-179,190,192,291-292,304-308,336-354,358-361,418
+README.md
+  s_b29193b867c127::t_deb63076e85497 240,263-270
+firmware/main/fx.h
+  s_b29193b867c127::t_fa688ac8d8b894 6,32-35
+  s_b29193b867c127::t_ab27d593343a28 36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "485cc9e846287a59166c4fe6001ca781165da7e4",
+  "prompts": {},
+  "sessions": {
+    "s_b29193b867c127": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1cfd6-b21b-73e7-add8-9c9a589aeae3",
+        "model": "deepseek-flash"
+      },
+      "human_author": "htynkn <htynkn@gmail.com>"
+    }
+  }
+}
