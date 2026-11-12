@@ -40,6 +40,7 @@ export default function agentDeckExtension(pi: ExtensionAPI) {
 
   const scroller = new DeckScroller();
   let disposed = false;
+  let panelOpen = false;         // /dock 面板重入保护 (模态循环只允许一份)
   let reconnectTimer: NodeJS.Timeout | null = null;
   let busy = false;
   let transientUntil = 0;        // done/error 特效期间不覆盖 LED
@@ -164,60 +165,71 @@ export default function agentDeckExtension(pi: ExtensionAPI) {
   });
 
   async function runPanel(ctx: ExtensionContext): Promise<void> {
+    /* 防重入: 面板是模态循环, 并发跑两份会让按键流串到另一个实例上 */
+    if (panelOpen) {
+      ctx.ui.notify("面板已打开", "warning");
+      return;
+    }
+    panelOpen = true;
     lastCtx = ctx;
-    let running = true;
-    while (running) {
-      /* 传函数而非快照: 面板重绘时实时读取, 面板停留期间状态变化也能反映 */
-      const action: PanelAction | null = await showPanel(ctx, channel, config, () => ({
-        busy,
-        scrollAvailable: scroller.available,
-      }));
-      if (!action || action.kind === "exit") break;
+    try {
+      while (true) {
+        /* 传函数而非快照: 面板重绘时实时读取, 面板停留期间状态变化也能反映 */
+        const action: PanelAction | null = await showPanel(ctx, channel, config, () => ({
+          busy,
+          scrollAvailable: scroller.available,
+        }));
+        if (!action || action.kind === "exit") break;
 
-      switch (action.kind) {
-        case "bind-device":
-          config.preferredDevice = action.name;
-          saveConfig(config);
-          ctx.ui.notify(`已绑定 ${action.name}, 重连中 ...`);
-          channel.dispose();
-          await connectWithRetry(ctx, true);
-          break;
+        switch (action.kind) {
+          case "bind-device":
+            config.preferredDevice = action.name;
+            saveConfig(config);
+            ctx.ui.notify(`已绑定 ${action.name}, 重连中 ...`);
+            channel.dispose();
+            await connectWithRetry(ctx, true);
+            break;
 
-        case "edit-macro":
-          config.macros[action.index] = action.text;
-          saveConfig(config);
-          ctx.ui.notify(`宏已保存: ${action.text}`);
-          break;
+          case "edit-macro":
+            config.macros[action.index] = action.text;
+            saveConfig(config);
+            ctx.ui.notify(`宏已保存: ${action.text}`);
+            break;
 
-        case "test-led":
-          if (!channel.connected) {
-            ctx.ui.notify("设备未连接", "warning");
-          } else {
-            await channel.writeState(action.state);
-            ctx.ui.notify(`已发送测试状态: ${action.state}`);
-            setTimeout(refreshState, TRANSIENT_MS);
-          }
-          break;
+          case "test-led":
+            if (!channel.connected) {
+              ctx.ui.notify("设备未连接", "warning");
+            } else {
+              /* 只发不等: 等回包会把面板循环挂死 (worker 不回 writeState) */
+              channel.writeState(action.state);
+              ctx.ui.notify(`已发送测试状态: ${action.state}`);
+              setTimeout(refreshState, TRANSIENT_MS);
+            }
+            break;
 
-        case "settings":
-          config.brightness = action.brightness;
-          config.volume = action.volume;
-          saveConfig(config);
-          /* 面板里每改一档已实时下发, 这里再补一次幂等写入 (并兼容非 TUI 回退路径) */
-          if (channel.connected) {
-            await channel.writeSettings(config.brightness, config.volume);
-            ctx.ui.notify(`已应用: 亮度 ${config.brightness}% · 音量 ${config.volume}%`);
-          } else {
-            ctx.ui.notify("设备未连接: 设置已记为默认值, 连上后以设备当前值为准", "warning");
-          }
-          break;
+          case "settings":
+            config.brightness = action.brightness;
+            config.volume = action.volume;
+            saveConfig(config);
+            /* 面板里每改一档已实时下发, 这里再补一次幂等写入 (并兼容非 TUI 回退路径) */
+            if (channel.connected) {
+              channel.writeSettings(config.brightness, config.volume);
+              ctx.ui.notify(`已应用: 亮度 ${config.brightness}% · 音量 ${config.volume}%`);
+            } else {
+              ctx.ui.notify("设备未连接: 设置已记为默认值, 连上后以设备当前值为准", "warning");
+            }
+            break;
 
-        case "reconnect":
-          ctx.ui.notify("重连中 ...");
-          channel.dispose();
-          await connectWithRetry(ctx, true);
-          break;
+          case "reconnect":
+            ctx.ui.notify("重连中 ...");
+            channel.dispose();
+            await connectWithRetry(ctx, true);
+            break;
+        }
       }
+    } finally {
+      /* 异常也要释放, 否则 /dock 从此永远报「面板已打开」 */
+      panelOpen = false;
     }
   }
 

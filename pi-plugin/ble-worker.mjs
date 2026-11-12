@@ -345,9 +345,12 @@ async function handle(req) {
       }
       case "writeState":
         await writeState(req.state);
+        /* 回包即使调用方不等: 避免主进程侧留一个永远不 resolve 的 pending */
+        if (typeof req.id === "number") send({ type: "result", id: req.id, ok: true });
         break;
       case "writeSettings":
         await writeSettings(req.brightness, req.volume);
+        if (typeof req.id === "number") send({ type: "result", id: req.id, ok: true });
         break;
       case "refreshRssi": {
         const value = await refreshRssi();

@@ -7,7 +7,7 @@
  * 注意 brightness / volume 只是「面板显示用缓存」: 设备 NVS 才是唯一真源,
  * 每次连上设备都会以设备上报的值覆盖本地 (见 index.ts 的 cfg 事件).
  */
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -65,8 +65,8 @@ export function loadConfig(): DeckConfig {
 
 export function saveConfig(config: DeckConfig): void {
   const payload = JSON.stringify(config, null, 2);
-  // 原子写: 先写临时文件再改名
+  /* 原子写: 临时文件 + rename (同分区 rename 是原子的), 中途崩溃不会写坏配置 */
   const tmp = CONFIG_PATH + ".tmp";
   writeFileSync(tmp, payload, "utf8");
-  writeFileSync(CONFIG_PATH, payload, "utf8");
+  renameSync(tmp, CONFIG_PATH);
 }

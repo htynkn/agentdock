@@ -474,8 +474,8 @@ function settingsFlow(
         const pct = clampPct(parseInt(value, 10), 0);
         if (id === "brightness") brightness = pct;
         else volume = pct;
-        /* 实时预览: 每改一档立即下发 (未连接时静默跳过) */
-        if (channel.connected) void channel.writeSettings(brightness, volume);
+        /* 实时预览: 每改一档立即下发 (未连接/未拉起 worker 时静默跳过) */
+        if (channel.connected) channel.writeSettings(brightness, volume);
         tui.requestRender();
       },
       () => done({ brightness, volume }),

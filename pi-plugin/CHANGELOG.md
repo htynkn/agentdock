@@ -26,6 +26,17 @@ See [PUBLISHING.md](./PUBLISHING.md) for the release process.
 
 ### Fixed
 
+- **`/dock` 用一段时间后就打不开**. 根因: worker 侧 `writeState` 不回 `result`,
+  而主进程的 `request()` 只在收到 `result` 时 resolve, 且没有任何超时。于是
+  `/dock` 里 `await channel.writeState()` (测试灯效) 与新增的
+  `await channel.writeSettings()` (设备设置) 永久挂起 → 面板的 `while` 循环停在
+  半途 → 命令 handler 永不返回, 之后的 `/dock` 就全部失效。现在写操作改为纯
+  发送不等回包 (`send()`, 同步返回 boolean), worker 也会补回 `result`;`request()`
+  增加按 op 区分的超时兜底, 任何请求都不会再永久挂起。
+- `/dock` 面板增加重入保护: 同时只允许一份模态循环, 异常退出也不会把状态锁死。
+- `saveConfig` 改为真正的原子写 (`writeFileSync` + `renameSync`), 不再残留
+  `agentdock.json.tmp`。
+
 - Fixed the "device discovered but never connects" failure loop. Root cause: noble's
   `connectAsync()` resolves `undefined` on success, and the timeout guard treated that
   falsy value as a timeout — then cancelled the just-established connection (the device

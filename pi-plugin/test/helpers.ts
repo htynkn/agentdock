@@ -111,12 +111,14 @@ export class FakeChannel {
     return this.scanImpl();
   }
 
-  async writeState(state: string): Promise<void> {
+  writeState(state: string): boolean {
     this.statesWritten.push(state);
+    return true;
   }
 
-  async writeSettings(brightness: number, volume: number): Promise<void> {
+  writeSettings(brightness: number, volume: number): boolean {
     this.settingsWritten.push({ brightness, volume });
+    return true;
   }
 
   /** 转成 showPanel 需要的类型 */
