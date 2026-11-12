@@ -1,0 +1,33 @@
+pi-plugin/panel.ts
+  s_b29193b867c127::t_8a2ac1af23fd8c 477-478
+pi-plugin/ble-worker.mjs
+  s_b29193b867c127::t_9327736fe96e69 348-349,353
+pi-plugin/index.ts
+  s_b29193b867c127::t_9bc3536c75a66a 43,168-173,175-228,230-232
+pi-plugin/CHANGELOG.md
+  s_b29193b867c127::t_e35e932f1b7949 29-39
+pi-plugin/test/ble.test.ts
+  s_b29193b867c127::t_ead808fdcd75ca 302-328,338
+pi-plugin/ble.ts
+  s_b29193b867c127::t_f3572d186ba63c 27-29,188-213,221-233,238,248-249,265,279,284-292,295-298
+pi-plugin/config.ts
+  s_b29193b867c127::t_deef8f6b432f2c 10,68,71
+pi-plugin/test/helpers.ts
+  s_b29193b867c127::t_31911033f4c2ce 114,116,119,121
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "86a925925a20d383889318a74416e02c98f15726",
+  "prompts": {},
+  "sessions": {
+    "s_b29193b867c127": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "01a1cfd6-b21b-73e7-add8-9c9a589aeae3",
+        "model": "deepseek-flash"
+      },
+      "human_author": "htynkn <htynkn@gmail.com>"
+    }
+  }
+}
