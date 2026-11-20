@@ -24,7 +24,7 @@ Install it as a pi package:
 pi install npm:agentdock-pi-plugin
 ```
 
-To pin a version: `pi install npm:agentdock-pi-plugin@0.3.0`. Project scope:
+To pin a version: `pi install npm:agentdock-pi-plugin@0.4.0`. Project scope:
 add `-l`. Remove with `pi remove npm:agentdock-pi-plugin`.
 
 `@stoprocent/noble` is a native BLE binding installed as a dependency. On Linux
@@ -51,8 +51,10 @@ Run `/dock` inside pi to open the management panel:
 
 - select or rebind a device
 - edit the KEY2 / KEY3 macros
-- test LED states (including `auto`, which plays the full seven-colour cycle once)
-- set LED brightness and buzzer volume (applied live, persisted on the device)
+- test LED states and their sounds (including `auto` for the seven-colour cycle and
+  `attention` for the "needs you" state)
+- set LED brightness, the three independent sound volumes and the master mute
+  (applied live, persisted on the device)
 - force a reconnect
 
 Configuration is stored in `~/.pi/agent/agentdock.json`:
@@ -62,24 +64,41 @@ Configuration is stored in `~/.pi/agent/agentdock.json`:
   "preferredDevice": "AgentDock-A1B2",
   "macros": ["继续", "不对"],
   "brightness": 100,
-  "volume": 100
+  "keyVolume": 100,
+  "knobVolume": 60,
+  "agentVolume": 100,
+  "muted": false
 }
 ```
 
-`brightness` / `volume` are a display cache only: the device's own NVS is the
-source of truth, and the values reported by the device on connect overwrite the
-local ones.
+`brightness` / the three volumes / `muted` are a display cache only: the device's
+own NVS is the source of truth, and the values reported by the device on connect
+overwrite the local ones.
+
+### Sounds
+
+Three independent sound categories, each with its own volume (0 % = that category
+is off). Adjust them in `/dock` → **声音与灯光**; every change is applied live and
+immediately previewed with that category's own sound.
+
+| Category | Fires on | Default |
+|---|---|---|
+| 按键音 (`keyVolume`) | KEY1/2/3 and encoder push confirmation | 100 % |
+| 旋钮刻度音 (`knobVolume`) | Encoder rotation ticks | 60 % (ticks are frequent, so quieter) |
+| agent 提示音 (`agentVolume`) | Run finished / real error / waiting for you | 100 % |
+
+`muted` is the master switch: KEY1 long press toggles all three at once
+(persisted on the device), and the panel can toggle it too.
 
 ### Controls
 
 | Device input | pi action |
 |---|---|
 | KEY1 short press | Abort the current run |
-| KEY1 long press | Toggle the device buzzer mute (device-local) |
+| KEY1 long press | Toggle all sounds (master mute ⇄ restore, device-local) |
 | KEY2 short press | Send macro 0 (default `继续`) |
 | KEY2 long press | Demo mode: bugle fanfare + seven-colour breathing LED (3 s, device-local) |
 | KEY3 short press | Send macro 1 (default `不对`) |
-| KEY3 long press | Toggle the encoder click sound (device-local) |
 | Encoder push | Send `继续` |
 | Encoder rotate | Scroll the transcript by ±3 lines per step |
 
@@ -89,10 +108,31 @@ local ones.
 |---|---|
 | Dim blue | Idle |
 | Green breathing | Agent is running |
-| White double flash | Run finished |
-| Red triple flash | A tool returned an error |
+| Amber double pulse | Agent is waiting for you (`attention`) |
+| White flashes, then back | Run finished (`done`) |
+| Red flashes, then back | Real failure (`error`) |
 | Seven-colour breathing | Demo / `auto` LED test (3 s) |
 | Very dim blue heartbeat | Not connected |
+
+### When does it turn red?
+
+A single failed tool call is normal trial and error — the agent usually fixes it
+itself, so one or two errors never light the LED. The extension only reports
+`error` after **3 consecutive** tool failures that are still not recovered after a
+2.5 s observation window; any success in between cancels the alarm. A run that
+ends through a provider error also reports `error` once it settles.
+
+`done` and `error` are transient: the extension sends the state together with a
+`then` target, and the device flashes and returns to that state by itself, so the
+LED never jumps back to the wrong colour.
+
+### Needs you (`attention`)
+
+When pi blocks on a user-facing prompt (`ui_prompt_start` — `ask_user_question`,
+confirm/select/input dialogs), the device switches to an amber double pulse and
+plays a dedicated attention chime. If nobody answers, the chime repeats every
+20 s, at most 3 times, and stops the moment the prompt is gone. The `/dock` panel
+itself does not trigger it.
 
 ### Transcript scrolling
 
@@ -113,12 +153,18 @@ The extension talks to `firmware/main/deck.c` over a custom GATT service:
 // device -> host
 {"k":"key","id":2}
 {"k":"enc","v":-1}
-{"k":"cfg","b":100,"v":80,"m":0,"c":1}   // 设备设置快照 (连接后立即推一次)
+{"k":"cfg","b":100,"m":0,"s":[100,60,100]}  // 设置快照 (连接后/KEY1 长按后推)
 
 // host -> device
-{"t":"s","st":"busy"}     // idle | busy | done | error | demo
-{"t":"cfg","b":80,"v":60} // 亮度 / 音量 0~100 (设备落 NVS)
+{"t":"s","st":"busy"}                        // idle | busy | attention
+{"t":"s","st":"error","then":"busy"}        // done|error|demo + 播完回哪
+{"t":"cfg","b":80,"m":0,"s":[100,55,90]}    // 亮度 / 总静音 / 三类音量 (均可选)
+{"t":"pv","c":1}                              // 试听: 0=按键 1=旋钮 2=agent
 ```
+
+`s` 的三项顺序固定为 **按键 / 旋钮 / agent**, 与固件 `sound_cat_t` 一致;
+每项 0~100 (0 = 该类关闭). 旧固件只认识 `{"t":"cfg","b":..,"v":..}`,
+新插件发的 `s` 会被忽略 (面板仍提示已应用, 建议固件与插件同步升级).
 
 ## Development
 

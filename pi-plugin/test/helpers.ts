@@ -80,7 +80,10 @@ export class FakeChannel {
   scanImpl: () => Promise<DeckPeripheralInfo[]> = async () => [];
   rssiImpl: (() => Promise<number | null>) | null = null;
   readonly statesWritten: string[] = [];
-  readonly settingsWritten: { brightness: number; volume: number }[] = [];
+  /** 带 then 的完整状态写入记录 */
+  readonly stateWrites: { state: string; then?: string }[] = [];
+  readonly configWrites: { brightness?: number; muted?: boolean; sounds?: readonly number[] }[] = [];
+  readonly previews: number[] = [];
   private listeners = new Set<(connected: boolean) => void>();
 
   onConnectionChange(cb: (connected: boolean) => void): () => void {
@@ -111,13 +114,23 @@ export class FakeChannel {
     return this.scanImpl();
   }
 
-  writeState(state: string): boolean {
+  writeState(state: string, then?: string): boolean {
     this.statesWritten.push(state);
+    this.stateWrites.push(then ? { state, then } : { state });
     return true;
   }
 
-  writeSettings(brightness: number, volume: number): boolean {
-    this.settingsWritten.push({ brightness, volume });
+  writeConfig(update: {
+    brightness?: number;
+    muted?: boolean;
+    sounds?: readonly number[];
+  }): boolean {
+    this.configWrites.push(update);
+    return true;
+  }
+
+  previewSound(cat: number): boolean {
+    this.previews.push(cat);
     return true;
   }
 
@@ -144,6 +157,8 @@ export class Harness {
   inputAnswers: (string | undefined)[] = [];
   /** ui.select 的返回值队列 */
   selectAnswers: (string | undefined)[] = [];
+  /** 每次 ui.select 的选项表 (验证菜单内容) */
+  readonly selectOptions: string[][] = [];
   renderCount = 0;
   private doneResolvers: ((value: unknown) => void)[] = [];
 
@@ -174,8 +189,9 @@ export class Harness {
           this.inputs.push(title);
           return this.inputAnswers.shift();
         },
-        select: async (title: string) => {
+        select: async (title: string, options?: string[]) => {
           this.selects.push(title);
+          this.selectOptions.push(options ?? []);
           return this.selectAnswers.shift();
         },
         notify: (message: string, type?: string) => {

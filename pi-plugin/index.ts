@@ -2,25 +2,50 @@
  * 智坞 AgentDock ↔ pi coding agent 扩展 (入口)
  *
  * 结构:
- *   index.ts  — pi 集成: 生命周期 / 状态机 / /deck 命令 / 动作分发
+ *   index.ts  — pi 集成: 生命周期 / 状态机 / /dock 命令 / 动作分发
  *   ble.ts    — BLE 通道 (扫描/连接/订阅/重连)
- *   panel.ts  — /deck 可视化管理面板
+ *   panel.ts  — /dock 可视化管理面板
  *   config.ts — 配置持久化 (~/.pi/agent/agentdock.json)
  *
  * 加载: pi --extension <本目录>/index.ts
- * 使用: pi 内输入 /deck 打开管理面板 (设备选择/宏配置/灯效测试)
+ * 使用: pi 内输入 /dock 打开管理面板 (设备选择/宏配置/声音/灯效测试)
+ *
+ * 状态机要点 (v0.4):
+ *   - 设备负责「瞬态灯效 + 之后回到哪」: 发 {"t":"s","st":"done","then":"idle"},
+ *     设备闪完自动回 then。插件不再用定时器抢状态, 也就不会出现
+ *     「红灯闪一下又跳成别的颜色」。
+ *   - error 去抖: 单次/两次工具报错是 agent 的正常试错, 不亮红灯。连续
+ *     ERROR_STREAK_THRESHOLD 次以上、且经过 ERROR_HOLD_MS 观察窗仍未恢复,
+ *     才提示一次; 任意一次成功立刻清零并取消待报的 error。
+ *   - 需要人处理 (ui_prompt_start → ask_user_question / 选择框等) 是独立状态:
+ *     琥珀双脉冲灯 + 专门提示音, 并在无人响应时按 ATTENTION_REMIND_MS 重提醒,
+ *     最多 ATTENTION_REMIND_TIMES 次。
  */
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 import { DeckChannel } from "./ble.js";
-import { clampPct, loadConfig, saveConfig, type DeckConfig } from "./config.js";
+import {
+  clampPct,
+  loadConfig,
+  saveConfig,
+  soundVolumes,
+  type DeckConfig,
+  type SoundVolumes,
+} from "./config.js";
 import { showPanel, type PanelAction } from "./panel.js";
 import { DeckScroller } from "./scroll.js";
 
-/* 状态回稳延时: done 白闪 / error 红闪播放完后再刷新为真实状态 */
-const TRANSIENT_MS = 3000;
-/* 断线重连间隔 */
+/** 连续出错多少次才值得亮红灯 (1~2 次是正常试错, agent 自己会缓过来) */
+const ERROR_STREAK_THRESHOLD = 3;
+/** 达到阈值后再等这么久, 期间有成功就作废 (避免「刚亮红就恢复」的闪烁) */
+const ERROR_HOLD_MS = 2500;
+/** 需要人处理时: 首次立刻提醒, 之后每 20s 补一次, 共 3 次 */
+const ATTENTION_REMIND_MS = 20000;
+const ATTENTION_REMIND_TIMES = 3;
+/** 断线重连间隔 */
 const RECONNECT_MS = 5000;
+
+type AgentOutcome = "completed" | "aborted" | "error";
 
 export default function agentDeckExtension(pi: ExtensionAPI) {
   const config: DeckConfig = loadConfig();
@@ -41,13 +66,24 @@ export default function agentDeckExtension(pi: ExtensionAPI) {
   const scroller = new DeckScroller();
   let disposed = false;
   let panelOpen = false;         // /dock 面板重入保护 (模态循环只允许一份)
-  /* 设备侧开关状态 (来自连接时的 cfg 快照, 不落盘: 设备 NVS 是真源) */
-  let deviceMuted = false;
-  let deviceClickSound = true;
+  /* 设备侧设置缓存 (来自连接时的 cfg 快照, 面板显示用; 设备 NVS 是真源) */
+  let deviceMuted = config.muted;
+  let deviceSounds: SoundVolumes = soundVolumes(config);
   let reconnectTimer: NodeJS.Timeout | null = null;
-  let busy = false;
-  let transientUntil = 0;        // done/error 特效期间不覆盖 LED
   let lastCtx: ExtensionContext | null = null;
+
+  /* ---------- agent 状态机 ---------- */
+  let busy = false;
+  /** 本轮连续工具报错次数 (任意一次成功即清零) */
+  let errorStreak = 0;
+  /** 本轮是否已经亮过红灯 (恢复前不重复提示) */
+  let errorReported = false;
+  let errorTimer: NodeJS.Timeout | null = null;
+  /** agent 正在等人操作 (ui_prompt_start...ui_prompt_end) */
+  let attentionOpen = false;
+  let attentionTimers: NodeJS.Timeout[] = [];
+  /** 最近一次 agent 循环的结束原因 (由 agent_end 记录, agent_settled 消费) */
+  let lastOutcome: AgentOutcome | undefined;
 
   /* 同键去重: 连接层理论上有监听器叠加风险（ble.ts 已修复），
    * 这里再兜底过滤 300ms 内的重复同键事件，避免一次按压触发多条消息 */
@@ -95,21 +131,39 @@ export default function agentDeckExtension(pi: ExtensionAPI) {
           log("未知按键 id:", msg.id);
       }
     } else if (msg.k === "cfg") {
-      /* 设备上报的真实设置 (连接后立即推一次) → 同步本地缓存供面板显示。
-       * 设备 NVS 是唯一真源: 这里只跟随, 不反向覆盖 */
+      /* 设备上报的真实设置 (连接后立即推一次, KEY1 长按静音后也会推)
+       * → 同步本地缓存供面板显示。设备 NVS 是唯一真源, 这里只跟随. */
       const brightness = clampPct(msg.b, config.brightness);
-      const volume = clampPct(msg.v, config.volume);
-      if (brightness !== config.brightness || volume !== config.volume) {
+      const incoming = Array.isArray(msg.s) ? msg.s : null;
+      const sounds: SoundVolumes =
+        incoming && incoming.length >= 3
+          ? [
+              clampPct(incoming[0], config.keyVolume),
+              clampPct(incoming[1], config.knobVolume),
+              clampPct(incoming[2], config.agentVolume),
+            ]
+          : soundVolumes(config);
+      const muted = typeof msg.m === "number" ? msg.m !== 0 : deviceMuted;
+      const changed =
+        brightness !== config.brightness ||
+        sounds[0] !== config.keyVolume ||
+        sounds[1] !== config.knobVolume ||
+        sounds[2] !== config.agentVolume ||
+        muted !== config.muted;
+      if (changed) {
         config.brightness = brightness;
-        config.volume = volume;
+        config.keyVolume = sounds[0];
+        config.knobVolume = sounds[1];
+        config.agentVolume = sounds[2];
+        config.muted = muted;
         saveConfig(config);
       }
+      deviceMuted = muted;
+      deviceSounds = sounds;
       log(
-        `设备设置: 亮度 ${brightness}% · 音量 ${volume}%` +
-          `${msg.m ? " · 静音开" : ""}${msg.c === 0 ? " · 刻度音关" : ""}`,
+        `设备设置: 亮度 ${brightness}% · 按键 ${sounds[0]}% · 旋钮 ${sounds[1]}%` +
+          ` · agent ${sounds[2]}%${muted ? " · 总静音" : ""}`,
       );
-      if (typeof msg.m === "number") deviceMuted = msg.m !== 0;
-      if (typeof msg.c === "number") deviceClickSound = msg.c !== 0;
     } else if (msg.k === "enc") {
       const ok = scroller.scrollByInput(Number(msg.v) || 0, log);
       if (!ok) log(`旋钮滚动 ${msg.v} (TUI 滚动不可用, 需 fullscreen 模式)`);
@@ -118,17 +172,58 @@ export default function agentDeckExtension(pi: ExtensionAPI) {
     }
   }
 
-  /* ---------- pi → 设备 (LED 状态机) ---------- */
-  function refreshState(): void {
-    if (Date.now() < transientUntil) return;
-    void channel.writeState(busy ? "busy" : "idle");
+  /* ---------- pi → 设备 (LED 状态机 + 提示音) ---------- */
+  const baseState = (): string => (busy ? "busy" : "idle");
+
+  /** 推持久状态; then = 瞬态灯效 (done/error/demo) 播完后回到哪 (交给设备处理) */
+  function pushState(state: string, then?: string): void {
+    void channel.writeState(state, then);
+  }
+
+  function clearErrorTimer(): void {
+    if (errorTimer) {
+      clearTimeout(errorTimer);
+      errorTimer = null;
+    }
+  }
+
+  function clearAttentionReminders(): void {
+    for (const t of attentionTimers) clearTimeout(t);
+    attentionTimers = [];
+  }
+
+  /** 无人响应时补提醒: 重发 attention, 设备会重播提示音 (灯效状态不变) */
+  function scheduleAttentionReminders(): void {
+    clearAttentionReminders();
+    for (let i = 1; i < ATTENTION_REMIND_TIMES; i++) {
+      attentionTimers.push(
+        setTimeout(() => {
+          if (!attentionOpen) return;
+          log("需要人处理, 再次提醒");
+          pushState("attention");
+        }, i * ATTENTION_REMIND_MS),
+      );
+    }
+  }
+
+  /** 从 agent_end 的消息里判断本次循环怎么结束的 (error / aborted / completed) */
+  function outcomeOfMessages(messages: unknown): AgentOutcome {
+    if (!Array.isArray(messages)) return "completed";
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i] as any;
+      if (m?.role !== "assistant") continue;
+      if (m.stopReason === "error") return "error";
+      if (m.stopReason === "aborted") return "aborted";
+      return "completed";
+    }
+    return "completed";
   }
 
   function onConnectionChanged(connected: boolean): void {
     updateStatusLine();
     if (connected) {
-      transientUntil = 0;
-      void channel.writeState(busy ? "busy" : "idle");
+      /* 设备刚连上会先把自己置为 idle, 这里补推当前真实状态 */
+      pushState(attentionOpen ? "attention" : baseState());
     }
   }
 
@@ -142,28 +237,91 @@ export default function agentDeckExtension(pi: ExtensionAPI) {
   pi.on("agent_start", (_e, ctx) => {
     lastCtx = ctx;
     busy = true;
-    refreshState();
+    errorStreak = 0;
+    errorReported = false;
+    lastOutcome = undefined;
+    clearErrorTimer();
+    if (!attentionOpen) pushState("busy");
   });
 
-  pi.on("agent_settled", (_e, ctx) => {
+  pi.on("agent_end", (event, ctx) => {
     lastCtx = ctx;
-    busy = false;
-    void channel.writeState("done");
-    transientUntil = Date.now() + TRANSIENT_MS;
-    setTimeout(refreshState, TRANSIENT_MS);
+    lastOutcome = outcomeOfMessages(event.messages);
   });
 
+  /* 工具报错只是「试错」, 不是「失败」: 连续多次且迟迟不恢复才提示,
+   * 避免 agent 自己修好的一次报错就闪红灯 */
   pi.on("tool_result", (event, ctx) => {
     lastCtx = ctx;
-    if (!event.isError) return;
-    transientUntil = Date.now() + TRANSIENT_MS;
-    void channel.writeState("error");
-    setTimeout(refreshState, TRANSIENT_MS);
+    if (!event.isError) {
+      errorStreak = 0;
+      errorReported = false;
+      clearErrorTimer();
+      return;
+    }
+    if (attentionOpen) return; // 等人处理中, 状态由 attention 接管
+    errorStreak++;
+    if (errorReported || errorTimer || errorStreak < ERROR_STREAK_THRESHOLD) return;
+    errorTimer = setTimeout(() => {
+      errorTimer = null;
+      if (attentionOpen || !busy || errorStreak < ERROR_STREAK_THRESHOLD) return;
+      errorReported = true;
+      log(`连续 ${errorStreak} 次工具报错, 红灯提示`);
+      pushState("error", baseState());
+    }, ERROR_HOLD_MS);
   });
 
-  /* ---------- /deck 命令 ---------- */
+  pi.on("agent_settled", (event, ctx) => {
+    lastCtx = ctx;
+    busy = false;
+    clearErrorTimer();
+    clearAttentionReminders();
+    attentionOpen = false;
+    const outcome: AgentOutcome = event.aborted ? "aborted" : (lastOutcome ?? "completed");
+    /** 本轮是否真的失败: 循环以 error 结束, 或者连续报错还没得到一次成功 */
+    const failed = outcome === "error" || (!errorReported && errorStreak >= ERROR_STREAK_THRESHOLD);
+    const alerted = errorReported;   // 运行中已经红过一次
+    lastOutcome = undefined;
+    errorReported = false;
+    errorStreak = 0;
+
+    if (outcome === "aborted") {
+      pushState("idle"); // 自己按 KEY1 打断的, 不吵人
+    } else if (outcome === "error") {
+      pushState("error", "idle"); // 真失败: 红闪 + 出错音
+    } else if (failed) {
+      pushState("error", "idle"); // 连错 + 没来得及提示: 收尾补一次
+    } else if (alerted) {
+      pushState("idle"); // 已经红过了, 收尾不再重复闪 (避免红→白→蓝的跳色)
+    } else {
+      pushState("done", "idle"); // 白闪 + 完成音
+    }
+  });
+
+  /* agent 卡在等人操作 (ask_user_question / 选择框 / 输入框):
+   * 这是唯一需要「主动叫人」的时刻 —— 琥珀双脉冲 + 专门提示音 + 补提醒 */
+  pi.on("ui_prompt_start", (event, ctx) => {
+    lastCtx = ctx;
+    /* /dock 面板自己就是模态 UI, 用户就在眼前, 不再提醒 */
+    if (panelOpen || attentionOpen) return;
+    attentionOpen = true;
+    clearErrorTimer();
+    log(`需要人处理 (${event.kind}${event.title ? `: ${event.title}` : ""})`);
+    pushState("attention");
+    scheduleAttentionReminders();
+  });
+
+  pi.on("ui_prompt_end", (_e, ctx) => {
+    lastCtx = ctx;
+    if (!attentionOpen) return;
+    attentionOpen = false;
+    clearAttentionReminders();
+    pushState(baseState());
+  });
+
+  /* ---------- /dock 命令 ---------- */
   pi.registerCommand("dock", {
-    description: "智坞 AgentDock 管理面板 (设备选择/宏配置/灯效测试)",
+    description: "智坞 AgentDock 管理面板 (设备选择/宏配置/声音/灯效测试)",
     handler: async (_args, ctx) => {
       await runPanel(ctx);
     },
@@ -184,7 +342,7 @@ export default function agentDeckExtension(pi: ExtensionAPI) {
           busy,
           scrollAvailable: scroller.available,
           muted: deviceMuted,
-          clickSound: deviceClickSound,
+          sounds: deviceSounds,
         }));
         if (!action || action.kind === "exit") break;
 
@@ -203,25 +361,43 @@ export default function agentDeckExtension(pi: ExtensionAPI) {
             ctx.ui.notify(`宏已保存: ${action.text}`);
             break;
 
-          case "test-led":
+          case "test-led": {
             if (!channel.connected) {
               ctx.ui.notify("设备未连接", "warning");
             } else {
-              /* 只发不等: 等回包会把面板循环挂死 (worker 不回 writeState) */
-              channel.writeState(action.state);
+              /* done/error/demo 是瞬态: 告诉设备播完回到当前真实状态。
+               * 只发不等 —— 等回包会把面板循环挂死 */
+              const then =
+                action.state === "done" || action.state === "error" || action.state === "demo"
+                  ? baseState()
+                  : undefined;
+              channel.writeState(action.state, then);
               ctx.ui.notify(`已发送测试状态: ${action.state}`);
-              setTimeout(refreshState, TRANSIENT_MS);
             }
             break;
+          }
 
           case "settings":
             config.brightness = action.brightness;
-            config.volume = action.volume;
+            config.keyVolume = action.sounds[0];
+            config.knobVolume = action.sounds[1];
+            config.agentVolume = action.sounds[2];
+            config.muted = action.muted;
             saveConfig(config);
+            deviceMuted = action.muted;
+            deviceSounds = [...action.sounds] as SoundVolumes;
             /* 面板里每改一档已实时下发, 这里再补一次幂等写入 (并兼容非 TUI 回退路径) */
             if (channel.connected) {
-              channel.writeSettings(config.brightness, config.volume);
-              ctx.ui.notify(`已应用: 亮度 ${config.brightness}% · 音量 ${config.volume}%`);
+              channel.writeConfig({
+                brightness: action.brightness,
+                muted: action.muted,
+                sounds: action.sounds,
+              });
+              ctx.ui.notify(
+                `已应用: 亮度 ${action.brightness}% · 按键 ${action.sounds[0]}%` +
+                  ` · 旋钮 ${action.sounds[1]}% · agent ${action.sounds[2]}%` +
+                  `${action.muted ? " · 总静音" : ""}`,
+              );
             } else {
               ctx.ui.notify("设备未连接: 设置已记为默认值, 连上后以设备当前值为准", "warning");
             }
@@ -331,7 +507,13 @@ export default function agentDeckExtension(pi: ExtensionAPI) {
 
   pi.on("session_shutdown", () => {
     disposed = true;
-    if (reconnectTimer) { clearInterval(reconnectTimer); reconnectTimer = null; }
+    if (reconnectTimer) {
+      clearInterval(reconnectTimer);
+      reconnectTimer = null;
+    }
+    clearErrorTimer();
+    clearAttentionReminders();
+    attentionOpen = false;
     channel.dispose();
     scroller.detach();
     log("资源已清理");

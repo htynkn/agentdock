@@ -7,13 +7,16 @@
  *
  * 按键语义 (事件 JSON 见 deck.c / 扩展 README):
  *   KEY1 短按   → 打断 agent (pi.abort)
- *   KEY1 长按   → 静音切换 (NVS 持久化, 本地音效)
+ *   KEY1 长按   → 声音总开关: 静音 ⇄ 恢复 (覆盖三类声音, NVS 持久化)
  *   KEY2 短按   → 宏「继续」
- *   KEY2 长按   → 演示模式: 号角 fanfare + 七彩呼吸灯 (3s)
- *   KEY3 短按   → 「继续」
- *   KEY3 长按   → 旋钮刻度音开关 (NVS 持久化)
- *   旋钮旋转    → 滚动 agent 输出 (本地齿轮声, 顺时针升调/逆时针降调)
+ *   KEY2 长按   → 演示模式: 号角 fanfare + 七彩呼吸灯 (3s, 设备自检)
+ *   KEY3 短按   → 宏「不对」
+ *   KEY3 长按   → 无动作 (声音的精细控制移到 /dock 面板)
+ *   旋钮旋转    → 滚动 agent 输出 (本地刻度音, 顺时针升调/逆时针降调)
  *   旋钮按压    → 「继续」
+ *
+ * 声音分三类 (按键 / 旋钮 / agent 提示), 音量在 /dock 里独立调; 设备侧
+ * KEY1 长按只做总开关, 这样按键语义最简单.
  *
  * 数据流: input 任务 → 事件队列 → app 任务分发 (deck / fx / config)
  */
@@ -50,9 +53,10 @@ static void send_key_event(int key_id)
 static void send_settings_event(void)
 {
     char buf[80];
-    snprintf(buf, sizeof(buf), "{\"k\":\"cfg\",\"b\":%u,\"v\":%u,\"m\":%d,\"c\":%d}",
-             fx_get_brightness(), fx_get_volume(),
-             fx_is_muted() ? 1 : 0, fx_is_click_enabled() ? 1 : 0);
+    snprintf(buf, sizeof(buf), "{\"k\":\"cfg\",\"b\":%u,\"m\":%d,\"s\":[%u,%u,%u]}",
+             fx_get_brightness(), fx_is_muted() ? 1 : 0,
+             fx_get_sound_volume(SOUND_KEY), fx_get_sound_volume(SOUND_KNOB),
+             fx_get_sound_volume(SOUND_AGENT));
     deck_send_event(buf);
 }
 
@@ -88,25 +92,20 @@ static void handle_event(const input_event_t *ev)
 
     case IN_EVT_KEY_LONG:
         switch (ev->value) {
-        case KEY_ID_1: {   /* 静音 */
+        case KEY_ID_1: {   /* 总静音开关: 一键管住三类声音 (再按恢复) */
             const bool muted = !fx_is_muted();
             fx_set_muted(muted);
-            ESP_LOGI(TAG, "动作: 静音 → %s", muted ? "开" : "关");
+            ESP_LOGI(TAG, "动作: 声音 → %s", muted ? "全部静音" : "恢复");
             fx_play(muted ? FX_MUTED_ON : FX_MUTED_OFF);
+            send_settings_event();   /* 面板里的开关跟着变 */
             break;
         }
-        case KEY_ID_2:     /* 演示: 号角 fanfare + 七彩呼吸 (本地反馈, 不依赖连接) */
+        case KEY_ID_2:     /* 演示: 号角 fanfare + 七彩呼吸 (本地自检, 不依赖连接) */
             ESP_LOGI(TAG, "动作: 演示模式");
             fx_demo_start();
             break;
-        case KEY_ID_3: {   /* 旋钮刻度音开关 */
-            const bool on = !fx_is_click_enabled();
-            fx_set_click_enabled(on);
-            ESP_LOGI(TAG, "动作: 旋钮刻度音 → %s", on ? "开" : "关");
-            fx_play(on ? FX_MUTED_ON : FX_MUTED_OFF);
-            break;
-        }
-        default:
+        default:           /* KEY3/旋钮长按: 无动作 (保留给后续扩展) */
+            ESP_LOGD(TAG, "长按 %ld 无动作", (long)ev->value);
             break;
         }
         break;
@@ -141,8 +140,8 @@ static void on_deck_channel(bool active)
 {
     if (active) {
         fx_play(FX_CONFIRM);
-        fx_set_agent_state(DECK_STATE_IDLE);   /* 真实状态由扩展补推 */
-        send_settings_event();                 /* 把亮度/音量/静音交给面板显示 */
+        fx_set_agent_state(DECK_STATE_IDLE, DECK_STATE_KEEP);   /* 真实状态由扩展补推 */
+        send_settings_event();                 /* 把亮度/静音/三类音量交给面板显示 */
     } else {
         fx_set_offline();
     }

@@ -22,14 +22,20 @@ import {
   truncateToWidth,
   visibleWidth,
 } from "@earendil-works/pi-tui";
-import { clampPct, type DeckConfig } from "./config.js";
+import { clampPct, type DeckConfig, soundVolumes, type SoundVolumes } from "./config.js";
 import type { DeckChannel, DeckPeripheralInfo } from "./ble.js";
 
 export type PanelAction =
   | { kind: "bind-device"; name: string }
   | { kind: "edit-macro"; index: number; text: string }
   | { kind: "test-led"; state: string }
-  | { kind: "settings"; brightness: number; volume: number }
+  | {
+      kind: "settings";
+      brightness: number;
+      /** [按键, 旋钮, agent] 三类音量 0~100 (0 = 关) */
+      sounds: SoundVolumes;
+      muted: boolean;
+    }
   | { kind: "reconnect" }
   | { kind: "exit" };
 
@@ -37,10 +43,10 @@ export type PanelAction =
 export interface PanelStatus {
   busy: boolean;
   scrollAvailable: boolean;
-  /** 设备侧静音状态 (来自连接时的 cfg 快照; undefined = 未知) */
+  /** 设备侧总静音 (来自连接时的 cfg 快照; undefined = 未知) */
   muted?: boolean;
-  /** 设备侧旋钮刻度音状态 (同上) */
-  clickSound?: boolean;
+  /** 设备侧三类音量 (同上) */
+  sounds?: SoundVolumes;
 }
 
 /* ---------------- 公共入口 ---------------- */
@@ -165,6 +171,7 @@ function mainMenu(
 ): Promise<string | null> {
   const macro2 = config.macros[0] ?? "(未配置)";
   const macro3 = config.macros[1] ?? "(未配置)";
+  const sounds = soundVolumes(config);
 
   return ctx.ui.custom<string | null>((tui, theme, _kb, done) => {
     /* --- 菜单项 --- */
@@ -172,11 +179,15 @@ function mainMenu(
       { value: "bind", label: "扫描 / 绑定设备", description: "发现附近设备, 按信号强度排序" },
       { value: "macro-2", label: "编辑宏 KEY2", description: `当前「${macro2}」` },
       { value: "macro-3", label: "编辑宏 KEY3", description: `当前「${macro3}」` },
-      { value: "led", label: "测试灯效", description: "推送 auto / busy / done / error / idle" },
+      {
+        value: "led",
+        label: "测试灯效与提示音",
+        description: "推送 auto / busy / attention / done / error / idle",
+      },
       {
         value: "settings",
-        label: "设备设置",
-        description: `亮度 ${config.brightness}% · 音量 ${config.volume}%`,
+        label: "声音与灯光",
+        description: `亮度 ${config.brightness}% · 声音 ${sounds[0]}/${sounds[1]}/${sounds[2]}%`,
       },
       { value: "reconnect", label: "重新连接", description: "断开后立即重连" },
       { value: "exit", label: "退出", description: "关闭面板" },
@@ -229,9 +240,9 @@ function mainMenu(
 
       const legend = spread(
         theme.fg("muted", "按键 ") +
-          theme.fg("text", "KEY1") + theme.fg("dim", " 打断/长按静音 · ") +
+          theme.fg("text", "KEY1") + theme.fg("dim", " 打断/长按声音总开关 · ") +
           theme.fg("text", "KEY2") + theme.fg("dim", `「${macro2}」/长按演示 · `) +
-          theme.fg("text", "KEY3") + theme.fg("dim", `「${macro3}」/长按刻度音`),
+          theme.fg("text", "KEY3") + theme.fg("dim", `「${macro3}」`),
         theme.fg("muted", "旋钮 ") + theme.fg("dim", "滚动/继续"),
         w,
       );
@@ -374,7 +385,10 @@ function ledFlow(ctx: ExtensionContext, channel: DeckChannel): Promise<string | 
     const rule = () => new Rule((s) => theme.fg("borderMuted", s));
 
     container.addChild(
-      line(theme.bold(theme.fg("accent", "测试灯效")) + theme.fg("muted", "  推送一次状态给设备")),
+      line(
+        theme.bold(theme.fg("accent", "测试灯效与提示音")) +
+          theme.fg("muted", "  推送一次状态给设备 (含对应提示音)"),
+      ),
     );
     if (!channel.connected) {
       container.addChild(line(theme.fg("warning", "⚠ 设备未连接, 推送不会生效")));
@@ -389,8 +403,13 @@ function ledFlow(ctx: ExtensionContext, channel: DeckChannel): Promise<string | 
         description: "七彩呼吸一次 (约 3s) 后自动回当前状态",
       },
       { value: "busy", label: `${theme.fg("success", "●")} busy`, description: "绿色呼吸 · agent 运行中" },
-      { value: "done", label: `${theme.fg("text", "●")} done`, description: "白色双闪 · 任务完成" },
-      { value: "error", label: `${theme.fg("error", "●")} error`, description: "红色三连闪 · 工具出错" },
+      {
+        value: "attention",
+        label: `${theme.fg("warning", "●")} attention`,
+        description: "琥珀双脉冲 + 提示音 · agent 等你处理",
+      },
+      { value: "done", label: `${theme.fg("text", "●")} done`, description: "白色闪烁 + 完成音 · 任务结束" },
+      { value: "error", label: `${theme.fg("error", "●")} error`, description: "红色闪烁 + 出错音 · 真的失败" },
       { value: "idle", label: `${theme.fg("accent", "●")} idle`, description: "蓝色微亮 · 待命" },
     ];
     const list = new SelectList(items, items.length, {
@@ -417,97 +436,131 @@ function ledFlow(ctx: ExtensionContext, channel: DeckChannel): Promise<string | 
   });
 }
 
-/* ---------------- 设备设置 (亮度 / 音量) ---------------- */
+/* ---------------- 声音与灯光设置 ---------------- */
 
 /* 10% 一档: 11 个值, Enter/Space 循环; 配合设备侧的实时生效就是滑动条 */
 const PCT_VALUES = Array.from({ length: 11 }, (_, i) => `${i * 10}%`);
+
+/** 三类声音的滑杆定义 — index 与固件 sound_cat_t 一致 */
+const SOUND_ROWS: { id: string; index: 0 | 1 | 2; label: string; tip: string }[] = [
+  { id: "sound-key", index: 0, label: "按键音", tip: "KEY1/2/3 与旋钮按压的确认音 (0% = 关)" },
+  { id: "sound-knob", index: 1, label: "旋钮刻度音", tip: "旋转时的齿轮声 (0% = 关), 默认比其它两类轻" },
+  { id: "sound-agent", index: 2, label: "agent 提示音", tip: "完成 / 出错 / 需要你处理 (0% = 关)" },
+];
 
 function settingsFlow(
   ctx: ExtensionContext,
   channel: DeckChannel,
   config: DeckConfig,
   device: PanelStatus = { busy: false, scrollAvailable: false },
-): Promise<{ brightness: number; volume: number } | null> {
-  return ctx.ui.custom<{ brightness: number; volume: number } | null>((tui, theme, _kb, done) => {
-    const container = new Container();
-    let brightness = config.brightness;
-    let volume = config.volume;
+): Promise<{ brightness: number; sounds: SoundVolumes; muted: boolean } | null> {
+  return ctx.ui.custom<{ brightness: number; sounds: SoundVolumes; muted: boolean } | null>(
+    (tui, theme, _kb, done) => {
+      const container = new Container();
+      let brightness = config.brightness;
+      const sounds: SoundVolumes = [...soundVolumes(config)] as SoundVolumes;
+      let muted = device.muted ?? config.muted;
 
-    container.addChild(
-      line(
-        theme.bold(theme.fg("accent", "设备设置")) +
-          theme.fg("muted", "  改一档立即生效, 并写入设备"),
-      ),
-    );
-    if (!channel.connected) {
       container.addChild(
-        line(theme.fg("warning", "⚠ 设备未连接: 调整不会生效, 连上后以设备当前值为准")),
+        line(
+          theme.bold(theme.fg("accent", "声音与灯光")) +
+            theme.fg("muted", "  改一档立即生效并写入设备"),
+        ),
       );
-    } else if (device.muted) {
-      /* 静音是设备侧总开关: 这时调音量听不到, 必须先解除静音 */
-      container.addChild(
-        line(theme.fg("warning", "⚠ 设备静音中: 试听音听不到, 长按 KEY1 解除静音")),
-      );
-    }
-    const flags: string[] = [];
-    if (device.muted !== undefined) flags.push(device.muted ? "静音 开" : "静音 关");
-    if (device.clickSound !== undefined) flags.push(device.clickSound ? "刻度音 开" : "刻度音 关");
-    if (flags.length) {
+      if (!channel.connected) {
+        container.addChild(
+          line(theme.fg("warning", "⚠ 设备未连接: 调整不会生效, 连上后以设备当前值为准")),
+        );
+      } else if (muted) {
+        /* 总静音是设备侧总开关: 这时调音量听不到, 必须先解除静音 */
+        container.addChild(
+          line(theme.fg("warning", "⚠ 总静音中: 试听音听不到 (把「总静音」切到「关」或长按 KEY1)")),
+        );
+      }
+      const flags = [
+        `按键 ${sounds[0]}%`,
+        `旋钮 ${sounds[1]}%`,
+        `agent ${sounds[2]}%`,
+        muted ? "总静音 开" : "总静音 关",
+      ];
       container.addChild(line(theme.fg("dim", `设备状态: ${flags.join(" · ")}`)));
-    }
-    container.addChild(new Rule((s) => theme.fg("borderMuted", s)));
+      container.addChild(new Rule((s) => theme.fg("borderMuted", s)));
 
-    const items: SettingItem[] = [
-      {
-        id: "brightness",
-        label: "LED 亮度",
-        currentValue: `${brightness}%`,
-        values: PCT_VALUES,
-        description: "WS2812 明暗, 改一档立即生效 (0% = 全灭)",
-      },
-      {
-        id: "volume",
-        label: "蜂鸣器音量",
-        currentValue: `${volume}%`,
-        values: PCT_VALUES,
-        description: "改一档立即试听一次 (0% = 无声)",
-      },
-    ];
+      const items: SettingItem[] = [
+        {
+          id: "brightness",
+          label: "LED 亮度",
+          currentValue: `${brightness}%`,
+          values: PCT_VALUES,
+          description: "WS2812 明暗, 改一档立即生效 (0% = 全灭)",
+        },
+        ...SOUND_ROWS.map((row) => ({
+          id: row.id,
+          label: row.label,
+          currentValue: `${sounds[row.index]}%`,
+          values: PCT_VALUES,
+          description: row.tip,
+        })),
+        {
+          id: "mute",
+          label: "总静音",
+          currentValue: muted ? "开" : "关",
+          values: ["关", "开"],
+          description: "一键关掉三类声音; 设备上长按 KEY1 也能切换",
+        },
+      ];
 
-    const list = new SettingsList(
-      items,
-      items.length,
-      {
-        label: (t, selected) => (selected ? theme.fg("accent", theme.bold(t)) : theme.fg("text", t)),
-        value: (t, selected) => (selected ? theme.fg("accent", t) : theme.fg("muted", t)),
-        description: (t) => theme.fg("muted", t),
-        cursor: theme.fg("accent", "→ "),
-        /* SettingsList 自带的提示是英文 "Esc to cancel"; 这里值已经实时下发,
-         * Esc 是「完成」而非取消 —— 直接替换成自己的文案 */
-        hint: () => theme.fg("dim", "  ↑↓ 选择 · Enter/Space 增减 10% · Esc 完成"),
-      },
-      (id, value) => {
-        const pct = clampPct(parseInt(value, 10), 0);
-        if (id === "brightness") brightness = pct;
-        else volume = pct;
-        /* 实时预览: 每改一档立即下发 (未连接/未拉起 worker 时静默跳过) */
-        if (channel.connected) channel.writeSettings(brightness, volume);
-        tui.requestRender();
-      },
-      () => done({ brightness, volume }),
-    );
-    container.addChild(list);
+      const list = new SettingsList(
+        items,
+        items.length,
+        {
+          label: (t, selected) => (selected ? theme.fg("accent", theme.bold(t)) : theme.fg("text", t)),
+          value: (t, selected) => (selected ? theme.fg("accent", t) : theme.fg("muted", t)),
+          description: (t) => theme.fg("muted", t),
+          cursor: theme.fg("accent", "→ "),
+          /* SettingsList 自带的提示是英文 "Esc to cancel"; 这里值已经实时下发,
+           * Esc 是「完成」而非取消 —— 直接替换成自己的文案 */
+          hint: () => theme.fg("dim", "  ↑↓ 选择 · Enter/Space 增减 10% · Esc 完成"),
+        },
+        (id, value) => {
+          if (id === "brightness") {
+            brightness = clampPct(parseInt(value, 10), brightness);
+            if (channel.connected) channel.writeConfig({ brightness });
+          } else if (id === "mute") {
+            muted = value === "开";
+            if (channel.connected) {
+              channel.writeConfig({ muted });
+              /* 解除静音时给一个确认音, 否则面板里点完没任何反馈 */
+              if (!muted) channel.previewSound(0);
+            }
+          } else {
+            const row = SOUND_ROWS.find((r) => r.id === id);
+            if (!row) return;
+            sounds[row.index] = clampPct(parseInt(value, 10), sounds[row.index]);
+            /* 实时预览: 每改一档立即下发新音量, 再用该类代表音试听
+             * (worker 侧串行处理, 保证「先设音量, 再试听」) */
+            if (channel.connected) {
+              channel.writeConfig({ sounds });
+              channel.previewSound(row.index);
+            }
+          }
+          tui.requestRender();
+        },
+        () => done({ brightness, sounds, muted }),
+      );
+      container.addChild(list);
 
-    return {
-      render: (width: number) => container.render(width).map((l) => truncateToWidth(l, width)),
-      invalidate: () => container.invalidate(),
-      handleInput: (data: string) => {
-        list.handleInput(data);
-        container.invalidate(); // 选中项可能已变 → 丢弃合成缓存
-        tui.requestRender();
-      },
-    };
-  });
+      return {
+        render: (width: number) => container.render(width).map((l) => truncateToWidth(l, width)),
+        invalidate: () => container.invalidate(),
+        handleInput: (data: string) => {
+          list.handleInput(data);
+          container.invalidate(); // 选中项可能已变 → 丢弃合成缓存
+          tui.requestRender();
+        },
+      };
+    },
+  );
 }
 
 /* ---------------- 非 TUI 回退 (标准对话框) ---------------- */
@@ -522,9 +575,20 @@ async function showPanelFallback(
     : "⚪ 未连接 (设备 LED 心跳待命)";
   const macroLine = `KEY2→${config.macros[0] ?? "(空)"}   KEY3→${config.macros[1] ?? "(空)"}`;
 
+  const sounds = soundVolumes(config);
   const choice = await ctx.ui.select(
-    `AgentDock 管理面板 (/dock)\n${status}\n${macroLine}`,
-    ["扫描 / 绑定设备", "编辑宏 KEY2", "编辑宏 KEY3", "测试灯效", "设备设置", "重新连接", "退出"],
+    `AgentDock 管理面板 (/dock)\n${status}\n${macroLine}\n` +
+      `声音: 按键 ${sounds[0]}% · 旋钮 ${sounds[1]}% · agent ${sounds[2]}%` +
+      `${config.muted ? " · 总静音" : ""}`,
+    [
+      "扫描 / 绑定设备",
+      "编辑宏 KEY2",
+      "编辑宏 KEY3",
+      "测试灯效与提示音",
+      "声音与灯光",
+      "重新连接",
+      "退出",
+    ],
   );
   if (choice === undefined) return null;
 
@@ -557,12 +621,13 @@ async function showPanelFallback(
       return { kind: "edit-macro", index, text: text.trim() };
     }
 
-    case "测试灯效": {
-      const s = await ctx.ui.select("测试哪个灯效?", [
+    case "测试灯效与提示音": {
+      const s = await ctx.ui.select("测试哪个状态?", [
         "demo — 七彩呼吸一次",
         "busy — 绿色呼吸",
-        "done — 白色双闪",
-        "error — 红色三连闪",
+        "attention — 琥珀双脉冲 + 提示音",
+        "done — 白色闪烁 + 完成音",
+        "error — 红色闪烁 + 出错音",
         "idle — 蓝色微亮",
       ]);
       if (s === undefined) return null;
@@ -570,18 +635,27 @@ async function showPanelFallback(
       return { kind: "test-led", state };
     }
 
-    case "设备设置": {
+    case "声音与灯光": {
       const pick = async (title: string, current: number): Promise<number | undefined> => {
-        const opts = ["0%", "10%", "20%", "30%", "40%", "50%", "60%", "70%", "80%", "90%", "100%"];
+        const opts = PCT_VALUES;
         const sel = await ctx.ui.select(`${title} (当前 ${current}%)`, opts);
         if (sel === undefined) return undefined;
         return clampPct(parseInt(sel, 10), current);
       };
       const brightness = await pick("LED 亮度", config.brightness);
       if (brightness === undefined) return null;
-      const volume = await pick("蜂鸣器音量", config.volume);
-      if (volume === undefined) return null;
-      return { kind: "settings", brightness, volume };
+      const next: SoundVolumes = [...soundVolumes(config)] as SoundVolumes;
+      for (const row of SOUND_ROWS) {
+        const v = await pick(row.label, next[row.index]);
+        if (v === undefined) return null;
+        next[row.index] = v;
+      }
+      const mutedPick = await ctx.ui.select(`总静音 (当前 ${config.muted ? "开" : "关"})`, [
+        "关",
+        "开",
+      ]);
+      if (mutedPick === undefined) return null;
+      return { kind: "settings", brightness, sounds: next, muted: mutedPick === "开" };
     }
 
     case "重新连接":
