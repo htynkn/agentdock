@@ -33,7 +33,10 @@ const DEFAULTS = {
   preferredDevice: "",
   macros: ["继续", "不对"],
   brightness: 100,
-  volume: 100,
+  keyVolume: 100,
+  knobVolume: 60, // 刻度音最频繁, 默认压低一档
+  agentVolume: 100,
+  muted: false,
 };
 
 describe("loadConfig", () => {
@@ -56,19 +59,56 @@ describe("loadConfig", () => {
       preferredDevice: "AgentDock-04A8",
       macros: ["继续吧", "重来"],
       brightness: 100,
-      volume: 100,
+      keyVolume: 100,
+      knobVolume: 60,
+      agentVolume: 100,
+      muted: false,
     });
   });
 
-  it("亮度/音量读入并在越界时钳制到 0~100", () => {
-    writeFileSync(configPath, JSON.stringify({ brightness: 55, volume: 30 }), "utf8");
-    expect(mod.loadConfig()).toMatchObject({ brightness: 55, volume: 30 });
+  it("亮度/三类音量读入并在越界时钳制到 0~100", () => {
+    writeFileSync(
+      configPath,
+      JSON.stringify({ brightness: 55, keyVolume: 80, knobVolume: 30, agentVolume: 0 }),
+      "utf8",
+    );
+    expect(mod.loadConfig()).toMatchObject({
+      brightness: 55,
+      keyVolume: 80,
+      knobVolume: 30,
+      agentVolume: 0,
+    });
 
-    writeFileSync(configPath, JSON.stringify({ brightness: 180, volume: -20 }), "utf8");
-    expect(mod.loadConfig()).toMatchObject({ brightness: 100, volume: 0 });
+    writeFileSync(
+      configPath,
+      JSON.stringify({ brightness: 180, keyVolume: -20, knobVolume: 300 }),
+      "utf8",
+    );
+    expect(mod.loadConfig()).toMatchObject({ brightness: 100, keyVolume: 0, knobVolume: 100 });
 
-    writeFileSync(configPath, JSON.stringify({ brightness: "abc", volume: null }), "utf8");
-    expect(mod.loadConfig()).toMatchObject({ brightness: 100, volume: 100 });
+    writeFileSync(
+      configPath,
+      JSON.stringify({ brightness: "abc", agentVolume: null }),
+      "utf8",
+    );
+    expect(mod.loadConfig()).toMatchObject({ brightness: 100, agentVolume: 100 });
+  });
+
+  it("旧版单一 volume 升级为三类音量 (不改变实际响度)", () => {
+    writeFileSync(configPath, JSON.stringify({ volume: 30 }), "utf8");
+    expect(mod.loadConfig()).toMatchObject({ keyVolume: 30, knobVolume: 30, agentVolume: 30 });
+  });
+
+  it("新字段优先于旧 volume", () => {
+    writeFileSync(configPath, JSON.stringify({ volume: 30, keyVolume: 90 }), "utf8");
+    expect(mod.loadConfig()).toMatchObject({ keyVolume: 90, knobVolume: 30, agentVolume: 30 });
+  });
+
+  it("muted 只接受布尔 true", () => {
+    writeFileSync(configPath, JSON.stringify({ muted: true }), "utf8");
+    expect(mod.loadConfig().muted).toBe(true);
+    writeFileSync(configPath, JSON.stringify({ muted: "yes" }), "utf8");
+    expect(mod.loadConfig().muted).toBe(false);
   });
 
   it("缺失字段逐项回退默认值", () => {
@@ -99,11 +139,20 @@ describe("saveConfig", () => {
       preferredDevice: "AgentDock-04A8",
       macros: ["继续吧", "重来"],
       brightness: 80,
-      volume: 40,
+      keyVolume: 90,
+      knobVolume: 40,
+      agentVolume: 70,
+      muted: true,
     };
     mod.saveConfig(cfg);
     expect(JSON.parse(readFileSync(configPath, "utf8"))).toEqual(cfg);
     expect(mod.loadConfig()).toEqual(cfg);
+  });
+
+  it("soundVolumes 按 按键/旋钮/agent 顺序输出", () => {
+    expect(
+      mod.soundVolumes({ ...DEFAULTS, keyVolume: 10, knobVolume: 20, agentVolume: 30 }),
+    ).toEqual([10, 20, 30]);
   });
 
   it("写入内容是 2 空格缩进的 JSON (便于手工编辑)", () => {

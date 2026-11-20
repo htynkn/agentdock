@@ -1,9 +1,13 @@
 /*
  * fx.c — 声音/LED 效果引擎
  *
- * 声音: 无源蜂鸣器 (IO1) 经 LEDC PWM 驱动, 频率=音高, 50% duty=响.
+ * 声音: 无源蜂鸣器 (IO1) 经 LEDC PWM 驱动, 频率=音高, duty=响度.
  * LED:  单颗 WS2812 (IO3), C2 无 RMT 走 led_strip SPI 后端.
- * 架构: fx 任务轮询请求队列与音符队列, 全非阻塞; 静音时发送 duty=0.
+ * 架构: fx 任务轮询请求队列与音符队列, 全非阻塞; 音量 0 时发送 duty=0.
+ *
+ * 三类声音 (sound_cat_t) 各有独立音量; 总静音优先. 静音开关的确认音是
+ * 例外: 它取三类中的最大音量, 并且总静音下也照样播 —— 否则「按一下没声音」
+ * 分不清是静音生效还是设备没响应.
  */
 #include "fx.h"
 
@@ -95,7 +99,8 @@ static int rtttl_parse(const char *rtttl, note_t *notes, int max_notes)
         if (*p == '.') { dotted = true; p++; }
         if (*p >= '4' && *p <= '7') { oct = *p - '0'; p++; }
 
-        if (letter < 'a' || letter > 'g') {
+        /* 'p' = 休止符 (RTTTL 标准), 其余音名必须是 a~g */
+        if (letter != 'p' && (letter < 'a' || letter > 'g')) {
             ESP_LOGW(TAG, "RTTTL 非法音符 '%c', 跳过", letter);
             while (*p && *p != ',') p++;
             continue;
@@ -119,12 +124,15 @@ static int rtttl_parse(const char *rtttl, note_t *notes, int max_notes)
 }
 
 /* ---------------- 事件音效定义 (改这里换音效) ---------------- */
-static const char *MELODY_XP_OFF_UP   = "xpoff:d=4,o=5,b=230:g#5,f#5,f5,2c#5";   /* 预留彩蛋 */
 static const char *s_melodies[FX_COUNT] = {
     [FX_BOOT]       = "boot:d=16,o=5,b=300:c,e,g,c6,e6,g6",          /* Mario 升级琶音 */
     [FX_CONFIRM]    = "confirm:d=8,o=6,b=300:b5,4e6",                /* Mario 金币 */
-    [FX_ERROR]      = "error:d=4,o=4,b=240:g4,4c#4",                 /* 下行叮咚 */
-    [FX_ATTENTION]  = "ask:d=8,o=6,b=200:e6,e6",                     /* 两连高音 */
+    /* 完成: 上行三音收在高音长音, 比开机琶音短一半, 一听就知道「结束了」 */
+    [FX_DONE]       = "done:d=16,o=5,b=240:g5,c6,e6,4g6",
+    /* 出错: 两个低音短促重复 + 下行三全音, 与完成音方向相反 */
+    [FX_ERROR]      = "err:d=16,o=4,b=260:g4,g4,4c#4",
+    /* 需要人处理: 两声急促高音后接更长的顶音, 留出反应时间 */
+    [FX_ATTENTION]  = "ask:d=16,o=6,b=270:e6,e6,8c7,16p,8e6,8e6,4c7",
     [FX_MUTED_ON]   = "muteon:d=8,o=6,b=250:e6,4e6",                 /* 一短一长 */
     [FX_MUTED_OFF]  = "muteoff:d=8,o=6,b=250:4e6,e6",                /* 一长一短 */
     [FX_DISCONNECT] = "offline:d=4,o=4,b=200:c4",                    /* 单长低音 */
@@ -133,15 +141,34 @@ static const char *s_melodies[FX_COUNT] = {
      * BGM 的辨识度很大程度来自贝斯+鼓的律动, 抽出来只剩一段无意义的 8-bit 跑动。
      * 号角式短句自带气息, 一听就是「8-bit 战争/胜利」。改曲子只改这个字符串。 */
     [FX_DEMO]       = "fanfare:d=16,o=5,b=170:c5,c5,c5,8f5,8a5,8c6,8a5,8f5,2c6",
-    /* 音量试听: 两个短音 (约 160ms), 响度差异最好辩 */
-    [FX_PREVIEW]    = "preview:d=16,o=5,b=220:a5,c6",
+    /* FX_PREVIEW 不走旋律: fx_preview(SOUND_KNOB) 直接播刻度音, 这里只是占位 */
+    [FX_PREVIEW]    = "preview:d=32,o=6,b=600:c6",
 };
 _Static_assert(sizeof(s_melodies) / sizeof(s_melodies[0]) == FX_COUNT, "旋律表与枚举不齐");
 
+/* 旋律 → 声音类别 (音量的归属) */
+static sound_cat_t melody_cat(fx_melody_t id)
+{
+    switch (id) {
+    case FX_CONFIRM:
+    case FX_MUTED_ON:
+    case FX_MUTED_OFF:
+    case FX_DEMO:
+        return SOUND_KEY;
+    default:
+        return SOUND_AGENT;
+    }
+}
+
 /* ---------------- 状态与任务 ---------------- */
 typedef struct {
+    fx_melody_t id;
+    sound_cat_t cat;               /* 用哪一类的音量播 */
+} fx_req_t;
+
+typedef struct {
     led_strip_handle_t led;
-    QueueHandle_t requests;
+    QueueHandle_t requests;        /* fx_req_t */
     QueueHandle_t clicks;          /* 旋钮刻度音请求 (int8_t: +1/-1) */
     int64_t last_click_us;         /* 上次刻度音时刻, 用于合并连跳 */
     int8_t last_click_dir;         /* 上次刻度音方向, 换向时立即响应 */
@@ -149,56 +176,72 @@ typedef struct {
 
 static fx_ctx_t s_fx;
 
-/* 音量 → LEDC duty (10bit, 50% duty = 满音量). 静音时直接 0. */
-static void buzzer_hw(bool on)
+static uint8_t cat_volume(sound_cat_t cat)
+{
+    if (cat >= SOUND_CAT_COUNT) return 0;
+    return config_get()->volume[cat];
+}
+
+/* 静音开关的确认音: 取三类最大音量, 只要有一类开着就听得到 */
+static uint8_t feedback_volume(void)
+{
+    uint8_t v = 0;
+    for (int i = 0; i < SOUND_CAT_COUNT; i++) {
+        if (config_get()->volume[i] > v) v = config_get()->volume[i];
+    }
+    return v;
+}
+
+/* 音量 → LEDC duty (10bit, 50% duty = 100% 音量). pct=0 时物理静音. */
+static void buzzer_hw(bool on, uint8_t pct)
 {
     uint32_t duty = 0;
-    if (on && !config_get()->muted) {
-        duty = 512u * config_get()->volume / 100u;
+    if (on && pct > 0) {
+        duty = 512u * (pct > 100 ? 100 : pct) / 100u;
     }
     /* duty 0 = MOSFET 关断, 物理静音 */
     ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, duty));
     ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0));
 }
 
-/* 刻度音: 两段短音, 方向决定尾部走向. 静音时完全不出声. */
-static void click_play(int8_t dir)
+/* 刻度音: 两段短音, 方向决定尾部走向. vol=0 时完全不出声. */
+static void click_play(int8_t dir, uint8_t vol)
 {
-    if (config_get()->muted) return;
+    if (vol == 0) return;
     const click_step_t *steps = dir > 0 ? CLICK_CW : CLICK_CCW;
     for (int i = 0; i < 2; i++) {
         ESP_ERROR_CHECK(ledc_set_freq(LEDC_LOW_SPEED_MODE, LEDC_TIMER_0, steps[i].hz));
-        buzzer_hw(true);
+        buzzer_hw(true, vol);
         vTaskDelay(pdMS_TO_TICKS(steps[i].ms));
-        buzzer_hw(false);
+        buzzer_hw(false, 0);
     }
 }
 
-/* 取一条刻度音请求播放. 返回是否播放了 (没有请求返回 false). */
+/* 取一条刻度音请求播放. 返回是否处理了 (没有请求返回 false). */
 static bool click_drain(void)
 {
     int8_t dir;
     if (xQueueReceive(s_fx.clicks, &dir, 0) != pdTRUE) return false;
-    click_play(dir);
+    if (!config_get()->muted) click_play(dir, cat_volume(SOUND_KNOB));
     return true;
 }
 
-/* 丢弃积压的刻度音 (静音切换/旋律结束), 避免延迟到下次才响 */
+/* 丢弃积压的刻度音 (静音/关闭刻度音), 避免延迟到下次才响 */
 static void click_flush(void)
 {
     int8_t dir;
     while (xQueueReceive(s_fx.clicks, &dir, 0) == pdTRUE) { }
 }
 
-static void play_notes(const note_t *notes, int count)
+static void play_notes(const note_t *notes, int count, uint8_t vol)
 {
     for (int i = 0; i < count; i++) {
-        if (notes[i].freq_hz > 0 && !config_get()->muted) {
+        if (notes[i].freq_hz > 0 && vol > 0) {
             ESP_ERROR_CHECK(ledc_set_freq(LEDC_LOW_SPEED_MODE, LEDC_TIMER_0, notes[i].freq_hz));
-            buzzer_hw(true);
+            buzzer_hw(true, vol);
         }
         vTaskDelay(pdMS_TO_TICKS(notes[i].ms));
-        buzzer_hw(false);
+        buzzer_hw(false, 0);
         vTaskDelay(pdMS_TO_TICKS(GAP_MS));
         click_drain();   /* 旋律句读处插播刻度音, 不打断节拍 */
     }
@@ -210,15 +253,21 @@ typedef enum {
     LED_MODE_OFFLINE,    /* 未连接: 每 1s 极暗蓝光心跳 */
     LED_MODE_STATIC,     /* 常亮 (idle 蓝) */
     LED_MODE_BREATHING,  /* 呼吸 (busy 绿) */
-    LED_MODE_FLASH_N,    /* 闪 N 次后回 base (done/error) */
-    LED_MODE_DEMO,       /* 七彩呼吸 N tick 后回 agent 状态 (演示/灯效测试) */
+    LED_MODE_ATTENTION,  /* 琥珀双脉冲 (等人操作) */
+    LED_MODE_FLASH_N,    /* 闪 N 次后回 return 状态 (done/error) */
+    LED_MODE_DEMO,       /* 七彩呼吸 N tick 后回 return 状态 (演示/灯效测试) */
 } led_mode_t;
 
 #define LED_TICK_MS      100
-#define LED_DEMO_TICKS   30   /* 3s: 与扩展侧 TRANSIENT_MS 对齐 */
+#define LED_DEMO_TICKS   30   /* 3s */
 #define LED_DEMO_HOLD    4    /* 每种颜色保持的 tick 数 (7 色 ≈ 2.8s) */
 /* 呼吸曲线: 峰值 32 = 缩放基准 (100ms/tick, 2s 周期) */
 static const uint8_t LED_BREATH[10] = { 4, 8, 14, 20, 24, 26, 24, 20, 14, 8 };
+/* 等人处理: 2s 一轮的「双脉冲 + 停顿」, 和 busy 的匀速呼吸明显不同 */
+#define LED_ATTENTION_TICKS 20
+static const uint8_t LED_ATTENTION[LED_ATTENTION_TICKS] = {
+    6, 24, 6, 0, 6, 32, 10, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+};
 /* 七彩: 红 橙 黄 绿 青 蓝 紫 (值为峰值, 再乘呼吸系数) */
 static const uint8_t LED_RAINBOW[7][3] = {
     { 40, 0, 0 }, { 40, 20, 0 }, { 40, 40, 0 }, { 0, 40, 0 },
@@ -228,16 +277,17 @@ static const uint8_t LED_RAINBOW[7][3] = {
 /* 状态由多个任务 (app 任务改状态 / led 任务渲染) 访问 → 互斥锁保护 */
 static SemaphoreHandle_t s_led_mtx;
 static led_mode_t s_led_mode = LED_MODE_OFFLINE;
-static deck_state_t s_agent_state = DECK_STATE_IDLE;   /* demo 结束后回这里 */
+static deck_state_t s_agent_state = DECK_STATE_IDLE;   /* 持久状态: 特效结束后回到这里 */
+static deck_state_t s_led_return = DECK_STATE_IDLE;    /* 当前特效 (闪烁/演示) 结束后去哪 */
 static uint8_t s_led_base[3] = { 0, 0, 40 };      /* idle 蓝 (微亮) */
 static uint8_t s_led_active[3] = { 0, 0, 0 };
 static int s_led_flashes_left = 0;
 static bool s_led_flash_on = false;   /* FLASH_N 相位: true=亮(active) false=灭(黑) */
 static int s_led_demo_tick = 0;
-static int s_led_phase = 0;           /* 呼吸相位: 跨模式共用, 切模式不跳变 */
+static int s_led_phase = 0;           /* 呼吸/脉冲相位: 跨模式共用, 切模式不跳变 */
 
-/* 只改状态不渲染 (锁内调) */
-static void led_apply_agent_state(deck_state_t state)
+/* 持久状态 → 灯效. 只改状态不渲染 (锁内调). DECK_STATE_KEEP 视为无操作. */
+static void led_apply_state(deck_state_t state)
 {
     switch (state) {
     case DECK_STATE_IDLE:
@@ -247,25 +297,15 @@ static void led_apply_agent_state(deck_state_t state)
     case DECK_STATE_BUSY:
         s_led_mode = LED_MODE_BREATHING;
         s_led_active[0] = 0; s_led_active[1] = 40; s_led_active[2] = 0;   /* 绿 */
+        s_led_phase = 0;   /* 呼吸表长 10, attention 的相位长 20 → 切模式必须归零 */
         break;
-    case DECK_STATE_DONE:
-        s_led_mode = LED_MODE_FLASH_N;
-        s_led_active[0] = 40; s_led_active[1] = 40; s_led_active[2] = 40;   /* 白 */
-        s_led_flashes_left = 4;   /* 双闪 = 亮灭亮灭 */
-        s_led_flash_on = true;    /* 先亮相, 首拍即见效果色 */
-        break;
-    case DECK_STATE_ERROR:
-        s_led_mode = LED_MODE_FLASH_N;
-        s_led_active[0] = 40; s_led_active[1] = 0; s_led_active[2] = 0;   /* 红 */
-        s_led_flashes_left = 6;   /* 三连闪 */
-        s_led_flash_on = true;
-        break;
-    case DECK_STATE_DEMO:
-        s_led_mode = LED_MODE_DEMO;
-        s_led_demo_tick = 0;
+    case DECK_STATE_ATTENTION:
+        s_led_mode = LED_MODE_ATTENTION;
+        s_led_active[0] = 40; s_led_active[1] = 22; s_led_active[2] = 0;   /* 琥珀 */
+        s_led_phase = 0;
         break;
     default:
-        break;
+        break;   /* KEEP / 未知: 不动 */
     }
 }
 
@@ -282,6 +322,14 @@ static void apply_led(void)
         b = s_led_active[2] * k / 32;
         break;
     }
+    case LED_MODE_ATTENTION: {
+        const uint8_t k = LED_ATTENTION[s_led_phase % LED_ATTENTION_TICKS];
+        s_led_phase = (s_led_phase + 1) % LED_ATTENTION_TICKS;
+        r = s_led_active[0] * k / 32;
+        g = s_led_active[1] * k / 32;
+        b = s_led_active[2] * k / 32;
+        break;
+    }
     case LED_MODE_DEMO: {
         const uint8_t k = LED_BREATH[s_led_phase];
         s_led_phase = (s_led_phase + 1) % 10;
@@ -290,19 +338,20 @@ static void apply_led(void)
         g = c[1] * k / 32;
         b = c[2] * k / 32;
         if (++s_led_demo_tick >= LED_DEMO_TICKS) {
-            led_apply_agent_state(s_agent_state);   /* 跳完一圈回真实状态 */
+            led_apply_state(s_led_return);   /* 跳完一圈回真实状态 */
         }
         break;
     }
     case LED_MODE_FLASH_N: {
-        /* 闪 = active↔黑 交替, 闪完回 base 常亮. 灭相必须是黑:
+        /* 闪 = active↔黑 交替, 闪完回 return 状态. 灭相必须是黑:
          * 若灭相显示 base, error/done 会变成「红蓝/白蓝交替」而非纯色闪烁 */
-        if (s_led_flash_on) { s_led_flash_on = false; }
-        else { s_led_flash_on = true; s_led_flashes_left--; }
-        r = s_led_flash_on ? s_led_active[0] : 0;
-        g = s_led_flash_on ? s_led_active[1] : 0;
-        b = s_led_flash_on ? s_led_active[2] : 0;
-        if (s_led_flashes_left <= 0) s_led_mode = LED_MODE_STATIC;
+        const bool on = s_led_flash_on;
+        r = on ? s_led_active[0] : 0;
+        g = on ? s_led_active[1] : 0;
+        b = on ? s_led_active[2] : 0;
+        if (!on) s_led_flashes_left--;      /* 一次「灭」结束 = 一次完整闪烁 */
+        s_led_flash_on = !on;
+        if (s_led_flashes_left <= 0) led_apply_state(s_led_return);
         break;
     }
     case LED_MODE_OFFLINE: {
@@ -351,19 +400,50 @@ void fx_set_offline(void)
     xSemaphoreGive(s_led_mtx);
 }
 
-void fx_set_agent_state(deck_state_t state)
+void fx_set_agent_state(deck_state_t state, deck_state_t then)
 {
     xSemaphoreTake(s_led_mtx, portMAX_DELAY);
-    if (state != DECK_STATE_DEMO) s_agent_state = state;   /* demo 不改基准状态 */
-    led_apply_agent_state(state);
+    /* 瞬态结束后去哪: 显式 then, 否则回到当前持久状态 */
+    const deck_state_t back = (then == DECK_STATE_KEEP) ? s_agent_state : then;
+    switch (state) {
+    case DECK_STATE_DONE:
+        s_agent_state = back;
+        s_led_return = back;
+        s_led_mode = LED_MODE_FLASH_N;
+        s_led_active[0] = 40; s_led_active[1] = 40; s_led_active[2] = 40;  /* 白 */
+        s_led_flashes_left = 4;   /* 4 次亮灭 */
+        s_led_flash_on = true;    /* 先亮相, 首拍即见效果色 */
+        break;
+    case DECK_STATE_ERROR:
+        s_agent_state = back;
+        s_led_return = back;
+        s_led_mode = LED_MODE_FLASH_N;
+        s_led_active[0] = 40; s_led_active[1] = 0; s_led_active[2] = 0;    /* 红 */
+        s_led_flashes_left = 6;   /* 6 次亮灭, 比完成更急 */
+        s_led_flash_on = true;
+        break;
+    case DECK_STATE_DEMO:
+        s_agent_state = back;
+        s_led_return = back;
+        s_led_mode = LED_MODE_DEMO;
+        s_led_demo_tick = 0;
+        s_led_phase = 0;   /* 同上: 呼吸表只有 10 项 */
+        break;
+    case DECK_STATE_KEEP:
+        break;
+    default:
+        s_agent_state = state;
+        led_apply_state(state);
+        break;
+    }
     xSemaphoreGive(s_led_mtx);
-    ESP_LOGD(TAG, "LED 状态机 → %d", state);
+    ESP_LOGD(TAG, "LED 状态机 → %d (then=%d)", state, back);
 }
 
 void fx_demo_start(void)
 {
-    fx_set_agent_state(DECK_STATE_DEMO);   /* 七彩呼吸 3s */
-    fx_play(FX_DEMO);                       /* 号角 fanfare */
+    fx_set_agent_state(DECK_STATE_DEMO, DECK_STATE_KEEP);   /* 七彩呼吸 3s 后回原状态 */
+    fx_play(FX_DEMO);                                       /* 号角 fanfare */
 }
 
 #define FX_IDLE_POLL_MS 10   /* 空转轮询周期 = 刻度音最大延迟 */
@@ -371,27 +451,39 @@ void fx_demo_start(void)
 static void fx_task(void *arg)
 {
     static note_t notes[RTTTL_MAX_NOTES];
-    fx_melody_t id;
+    fx_req_t req;
     for (;;) {
         /* 刻度音优先: 10ms 轮询一次, 人手旋转的反馈要在半帧内出声 */
         if (click_drain()) {
             continue;
         }
-        if (xQueueReceive(s_fx.requests, &id, pdMS_TO_TICKS(FX_IDLE_POLL_MS)) != pdTRUE) continue;
-        if (id >= FX_COUNT) continue;
+        if (xQueueReceive(s_fx.requests, &req, pdMS_TO_TICKS(FX_IDLE_POLL_MS)) != pdTRUE) continue;
+        if (req.id >= FX_COUNT) continue;
 
-        if (config_get()->muted && id != FX_MUTED_OFF) {
-            /* 静音中只放行"关闭静音"的确认音 */
-            ESP_LOGD(TAG, "静音中, 跳过 %d", id);
+        /* 静音开关的确认音例外: 总静音下也要响, 否则无法确认「已解除静音」 */
+        const bool feedback = (req.id == FX_MUTED_ON || req.id == FX_MUTED_OFF);
+        if (config_get()->muted && !feedback) {
+            ESP_LOGD(TAG, "静音中, 跳过 %d", req.id);
             continue;
         }
-        const int count = rtttl_parse(s_melodies[id], notes, RTTTL_MAX_NOTES);
+        const uint8_t vol = feedback ? feedback_volume() : cat_volume(req.cat);
+        if (vol == 0) {
+            ESP_LOGD(TAG, "音量 0, 跳过 %d", req.id);
+            continue;
+        }
+
+        /* 刻度音试听: 直接播一格真实刻度, 才能听出音量差别 */
+        if (req.id == FX_PREVIEW) {
+            click_play(1, vol);
+            continue;
+        }
+        const int count = rtttl_parse(s_melodies[req.id], notes, RTTTL_MAX_NOTES);
         if (count < 0) {
-            ESP_LOGE(TAG, "RTTTL 解析失败 (%d): %s", count, s_melodies[id]);
+            ESP_LOGE(TAG, "RTTTL 解析失败 (%d): %s", count, s_melodies[req.id]);
             continue;
         }
-        ESP_LOGD(TAG, "播放 %d (%d 音符)", id, count);
-        play_notes(notes, count);
+        ESP_LOGD(TAG, "播放 %d (%d 音符, 音量 %u%%)", req.id, count, vol);
+        play_notes(notes, count, vol);
     }
 }
 
@@ -400,14 +492,30 @@ static void fx_task(void *arg)
 void fx_play(fx_melody_t id)
 {
     if (id >= FX_COUNT) return;
-    if (xQueueSend(s_fx.requests, &id, 0) != pdTRUE) {
+    const fx_req_t req = { .id = id, .cat = melody_cat(id) };
+    if (xQueueSend(s_fx.requests, &req, 0) != pdTRUE) {
         ESP_LOGW(TAG, "fx 队列满, 丢弃 %d", id);
+    }
+}
+
+void fx_preview(sound_cat_t cat)
+{
+    if (cat >= SOUND_CAT_COUNT) return;
+    /* 用该类别最有代表性的短音: 按键=金币, 旋钮=一格刻度, agent=完成三音 */
+    const fx_req_t req = {
+        .id = (cat == SOUND_KNOB) ? FX_PREVIEW
+            : (cat == SOUND_KEY) ? FX_CONFIRM
+                                 : FX_DONE,
+        .cat = cat,
+    };
+    if (xQueueSend(s_fx.requests, &req, 0) != pdTRUE) {
+        ESP_LOGW(TAG, "fx 队列满, 试听丢弃 %d", cat);
     }
 }
 
 void fx_encoder_click(int32_t dir)
 {
-    if (dir == 0 || config_get()->muted || !config_get()->click_sound) return;
+    if (dir == 0 || config_get()->muted || cat_volume(SOUND_KNOB) == 0) return;
 
     const int8_t d = dir > 0 ? 1 : -1;
     const int64_t now = esp_timer_get_time();
@@ -428,8 +536,8 @@ void fx_set_muted(bool muted)
 {
     config_set_muted(muted);        /* 改配置 = 立即生效 (buzzer_hw 每次读) */
     if (muted) {
-        buzzer_hw(false);   /* 掐断当前正在响的音符 */
-        click_flush();      /* 静音瞬间的待播刻度音一并作废 */
+        buzzer_hw(false, 0);   /* 掐断当前正在响的音符 */
+        click_flush();         /* 静音瞬间的待播刻度音一并作废 */
     }
 }
 
@@ -438,26 +546,16 @@ bool fx_is_muted(void)
     return config_get()->muted;
 }
 
-void fx_set_click_enabled(bool on)
+void fx_set_sound_volume(sound_cat_t cat, uint8_t pct)
 {
-    config_set_click_sound(on);     /* 下一格起生效, 无需打断当前刻度音 */
-    if (!on) click_flush();
+    config_set_sound_volume(cat, pct);
+    if (cat == SOUND_KNOB && pct == 0) click_flush();
+    if (pct == 0) buzzer_hw(false, 0);   /* 调到 0: 立即掐断, 不留尾音 */
 }
 
-bool fx_is_click_enabled(void)
+uint8_t fx_get_sound_volume(sound_cat_t cat)
 {
-    return config_get()->click_sound;
-}
-
-void fx_set_volume(uint8_t pct)
-{
-    config_set_volume(pct);         /* 下一音符起生效 */
-    if (config_get()->volume == 0) buzzer_hw(false);
-}
-
-uint8_t fx_get_volume(void)
-{
-    return config_get()->volume;
+    return cat_volume(cat);
 }
 
 void fx_set_brightness(uint8_t pct)
@@ -520,11 +618,13 @@ void fx_init(void)
     ESP_ERROR_CHECK(led_strip_new_spi_device(&strip, &spi, &s_fx.led));
     led_strip_clear(s_fx.led);
 
-    s_fx.requests = xQueueCreate(FX_QUEUE_LEN, sizeof(fx_melody_t));
+    s_fx.requests = xQueueCreate(FX_QUEUE_LEN, sizeof(fx_req_t));
     s_fx.clicks = xQueueCreate(CLICK_QUEUE_LEN, sizeof(int8_t));
     s_led_mtx = xSemaphoreCreateMutex();
     xTaskCreate(fx_task, "fx", 3072, NULL, 5, NULL);
     xTaskCreate(led_task, "led", 3072, NULL, 4, NULL);
-    ESP_LOGI(TAG, "fx 引擎就绪 (buzzer=IO%d led=IO%d 音量=%u%% 亮度=%u%%)",
-             BUZZER_GPIO, LED_GPIO, config_get()->volume, config_get()->brightness);
+    ESP_LOGI(TAG, "fx 引擎就绪 (buzzer=IO%d led=IO%d 音量 按键=%u%% 旋钮=%u%% agent=%u%% 亮度=%u%%)",
+             BUZZER_GPIO, LED_GPIO, config_get()->volume[SOUND_KEY],
+             config_get()->volume[SOUND_KNOB], config_get()->volume[SOUND_AGENT],
+             config_get()->brightness);
 }

@@ -25,7 +25,10 @@ const config = {
   preferredDevice: "",
   macros: ["继续吧", "继续"],
   brightness: 100,
-  volume: 100,
+  keyVolume: 100,
+  knobVolume: 60,
+  agentVolume: 100,
+  muted: false,
 };
 const idle: PanelStatus = { busy: false, scrollAvailable: true };
 
@@ -316,19 +319,20 @@ describe("灯效测试流程", () => {
     return { result };
   }
 
-  it("列出五种状态 (含 auto 七彩) 且选中项语义正确", async () => {
+  it("列出六种状态 (含 auto / attention) 且选中项语义正确", async () => {
     const h = new Harness();
     const ch = connectedChannel();
     await openLed(h, ch);
 
     const text = plainLines(h.current, 72).join("\n");
-    for (const s of ["auto", "busy", "done", "error", "idle"]) expect(text).toContain(s);
+    for (const s of ["auto", "busy", "attention", "done", "error", "idle"]) {
+      expect(text).toContain(s);
+    }
     expect(overflowLines(h.current, 72)).toEqual([]);
 
     h.current.handleInput!(KEY.down);
-    h.current.handleInput!(KEY.down);
-    h.current.handleInput!(KEY.down); // error
-    expect(selectedLabel(h.current)).toContain("error");
+    h.current.handleInput!(KEY.down); // attention
+    expect(selectedLabel(h.current)).toContain("attention");
   });
 
   it("auto 在首位, 选中返回 test-led demo (一次七彩)", async () => {
@@ -342,7 +346,7 @@ describe("灯效测试流程", () => {
   it("选中 error 返回 test-led 动作", async () => {
     const h = new Harness();
     const { result } = await openLed(h, connectedChannel());
-    for (let i = 0; i < 3; i++) h.current.handleInput!(KEY.down);
+    for (let i = 0; i < 4; i++) h.current.handleInput!(KEY.down); // → error
     h.current.handleInput!(KEY.enter);
     await expect(result).resolves.toEqual({ kind: "test-led", state: "error" });
   });
@@ -363,7 +367,7 @@ describe("灯效测试流程", () => {
   });
 });
 
-describe("设备设置流程", () => {
+describe("声音与灯光设置", () => {
   async function openSettings(
     h: Harness,
     ch: FakeChannel,
@@ -371,26 +375,71 @@ describe("设备设置流程", () => {
   ): Promise<{ result: Promise<PanelAction | null> }> {
     const result = showPanel(h.ctx, ch.asChannel(), config, status);
     await waitFor(() => h.components.length > 0);
-    for (let i = 0; i < 4; i++) h.current.handleInput!(KEY.down); // → 设备设置
+    for (let i = 0; i < 4; i++) h.current.handleInput!(KEY.down); // → 声音与灯光
     h.current.handleInput!(KEY.enter);
     await waitFor(() => h.components.length === 2, "设置页未打开");
     return { result };
   }
 
-  it("显示当前亮度/音量, 回车增减 10% 并实时下发", async () => {
+  it("列出亮度 / 三类声音 / 总静音, 改一档实时下发并试听", async () => {
     const h = new Harness();
     const ch = connectedChannel();
     await openSettings(h, ch);
 
     const text = plainLines(h.current, 72).join("\n");
-    expect(text).toContain("LED 亮度");
-    expect(text).toContain("蜂鸣器音量");
-    expect(text).toContain("100%");
+    for (const label of ["LED 亮度", "按键音", "旋钮刻度音", "agent 提示音", "总静音"]) {
+      expect(text).toContain(label);
+    }
     expect(overflowLines(h.current, 72)).toEqual([]);
 
-    h.current.handleInput!(KEY.enter); // 亮度 100% → 0%
-    expect(ch.settingsWritten.at(-1)).toEqual({ brightness: 0, volume: 100 });
+    /* 第一行亮度: 100% → 0% */
+    h.current.handleInput!(KEY.enter);
+    expect(ch.configWrites.at(-1)).toEqual({ brightness: 0 });
     expect(plainLines(h.current, 72).join("\n")).toContain("0%");
+
+    /* 第二行按键音: 100% → 0%, 先设音量再试听 */
+    h.current.handleInput!(KEY.down);
+    h.current.handleInput!(KEY.enter);
+    expect(ch.configWrites.at(-1)).toEqual({ sounds: [0, 60, 100] });
+    expect(ch.previews.at(-1)).toBe(0);
+  });
+
+  it("旋钮音默认 60%, 调档后仍只发改动的类别", async () => {
+    const h = new Harness();
+    const ch = connectedChannel();
+    await openSettings(h, ch);
+
+    const text = plainLines(h.current, 72).join("\n");
+    expect(text).toContain("60%");
+
+    h.current.handleInput!(KEY.down);
+    h.current.handleInput!(KEY.down); // 旋钮刻度音
+    h.current.handleInput!(KEY.enter); // 60% → 70%
+    expect(ch.configWrites.at(-1)).toEqual({ sounds: [100, 70, 100] });
+    expect(ch.previews.at(-1)).toBe(1);
+  });
+
+  it("总静音可开关, 解除时给一个确认音", async () => {
+    const h = new Harness();
+    const ch = connectedChannel();
+    const { result } = await openSettings(h, ch);
+
+    for (let i = 0; i < 4; i++) h.current.handleInput!(KEY.down); // → 总静音
+    h.current.handleInput!(KEY.enter); // 关 → 开
+    expect(ch.configWrites.at(-1)).toEqual({ muted: true });
+    expect(ch.previews.at(-1)).toBeUndefined();
+
+    h.current.handleInput!(KEY.enter); // 开 → 关
+    expect(ch.configWrites.at(-1)).toEqual({ muted: false });
+    expect(ch.previews.at(-1)).toBe(0);
+
+    h.current.handleInput!(KEY.esc);
+    await expect(result).resolves.toEqual({
+      kind: "settings",
+      brightness: 100,
+      sounds: [100, 60, 100],
+      muted: false,
+    });
   });
 
   it("Esc 完成并返回最终值", async () => {
@@ -398,11 +447,16 @@ describe("设备设置流程", () => {
     const ch = connectedChannel();
     const { result } = await openSettings(h, ch);
 
-    h.current.handleInput!(KEY.down); // 选中音量
+    h.current.handleInput!(KEY.down); // 选中按键音
     h.current.handleInput!(KEY.enter); // 100% → 0%
     h.current.handleInput!(KEY.esc);
 
-    await expect(result).resolves.toEqual({ kind: "settings", brightness: 100, volume: 0 });
+    await expect(result).resolves.toEqual({
+      kind: "settings",
+      brightness: 100,
+      sounds: [0, 60, 100],
+      muted: false,
+    });
   });
 
   it("未连接时提示调整不生效, 且不写 BLE", async () => {
@@ -412,43 +466,41 @@ describe("设备设置流程", () => {
 
     expect(plainLines(h.current, 72).join("\n")).toContain("设备未连接");
     h.current.handleInput!(KEY.enter);
-    expect(ch.settingsWritten).toEqual([]);
+    expect(ch.configWrites).toEqual([]);
+    expect(ch.previews).toEqual([]);
   });
 
   it("主菜单描述里显示当前值", async () => {
     const h = new Harness();
     await openPanel(h, connectedChannel());
     for (let i = 0; i < 4; i++) h.current.handleInput!(KEY.down);
-    expect(plainLines(h.current, 72).join("\n")).toContain("亮度 100% · 音量 100%");
+    const text = plainLines(h.current, 72).join("\n");
+    expect(text).toContain("亮度 100%");
+    expect(text).toContain("声音 100/60/100%");
   });
 
-  it("音量项提示「改一档立即试听」", async () => {
+  it("各项描述里提示 0% = 关", async () => {
     const h = new Harness();
     await openSettings(h, connectedChannel());
-    h.current.handleInput!(KEY.down); // 选中音量
-    expect(plainLines(h.current, 72).join("\n")).toContain("立即试听");
+    h.current.handleInput!(KEY.down); // 选中按键音
+    expect(plainLines(h.current, 72).join("\n")).toContain("0% = 关");
   });
 
   it("设备静音时提醒听不到试听音", async () => {
     const h = new Harness();
-    await openSettings(h, connectedChannel(), () => ({ ...idle, muted: true, clickSound: true }));
+    await openSettings(h, connectedChannel(), () => ({ ...idle, muted: true }));
     const text = plainLines(h.current, 72).join("\n");
-    expect(text).toContain("设备静音中");
+    expect(text).toContain("总静音中");
     expect(text).toContain("长按 KEY1");
-    expect(text).toContain("静音 开");
-    expect(text).toContain("刻度音 开");
+    expect(text).toContain("总静音 开");
   });
 
   it("未静音时不出现静音警告", async () => {
     const h = new Harness();
-    await openSettings(h, connectedChannel(), () => ({
-      ...idle,
-      muted: false,
-      clickSound: false,
-    }));
+    await openSettings(h, connectedChannel(), () => ({ ...idle, muted: false }));
     const text = plainLines(h.current, 72).join("\n");
-    expect(text).not.toContain("设备静音中");
-    expect(text).toContain("刻度音 关");
+    expect(text).not.toContain("总静音中");
+    expect(text).toContain("总静音 关");
   });
 });
 
@@ -472,17 +524,30 @@ describe("非 TUI 回退", () => {
     expect(h.selects[0]).toMatch(/-58 dBm/);
   });
 
-  it("回退模式也能设置亮度/音量", async () => {
+  it("回退模式也能设置亮度/三类声音/静音", async () => {
     const h = new Harness({ mode: "rpc" });
-    h.selectAnswers.push("设备设置", "80%", "40%");
+    h.selectAnswers.push(
+      "声音与灯光",
+      "80%", // 亮度
+      "90%", // 按键
+      "40%", // 旋钮
+      "70%", // agent
+      "关", // 总静音
+    );
     const result = await showPanel(h.ctx, connectedChannel().asChannel(), config, () => idle);
-    expect(result).toEqual({ kind: "settings", brightness: 80, volume: 40 });
+    expect(result).toEqual({
+      kind: "settings",
+      brightness: 80,
+      sounds: [90, 40, 70],
+      muted: false,
+    });
   });
 
-  it("回退模式灯效选项含 auto", async () => {
+  it("回退模式灯效选项含 auto 与 attention", async () => {
     const h = new Harness({ mode: "rpc" });
-    h.selectAnswers.push("测试灯效", "demo — 七彩呼吸一次");
+    h.selectAnswers.push("测试灯效与提示音", "demo — 七彩呼吸一次");
     const result = await showPanel(h.ctx, connectedChannel().asChannel(), config, () => idle);
     expect(result).toEqual({ kind: "test-led", state: "demo" });
+    expect(h.selectOptions.at(-1)?.join(" ")).toContain("attention");
   });
 });

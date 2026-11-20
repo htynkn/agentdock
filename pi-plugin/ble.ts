@@ -282,20 +282,37 @@ export class DeckChannel {
   }
 
   /**
-   * 向 STATE char 写 agent 状态 (驱动设备 LED).
+   * 向 STATE char 写 agent 状态 (驱动设备 LED + 状态提示音).
+   *
+   * then = 瞬态灯效 (done/error/demo) 播完后回到的状态; 省略 = 设备保持原状态.
+   * 把「之后回到哪」交给设备, 插件就不用为每个特效挂一个定时器 (早年正是
+   * 3000ms 的 transient 定时器导致状态跳变、红灯闪一下又变回别的颜色).
    *
    * 只发不等: worker 侧写入成功后已无需回包, 而后台任务没必要为了一个 notify
    * 阻塞面板 —— 这是「/dock 打不开」那个死锁的根源.
    */
-  writeState(state: string): boolean {
+  writeState(state: string, then?: string): boolean {
     if (!this.worker) return false; /* 未连接时静默跳过 (与旧行为一致) */
-    return this.send("writeState", { state });
+    return this.send("writeState", then ? { state, then } : { state });
   }
 
-  /** 向 STATE char 写亮度/音量 (0~100, 设备侧落 NVS 并立即生效); 同样只发不等 */
-  writeSettings(brightness: number, volume: number): boolean {
+  /**
+   * 向 STATE char 写设置 (亮度 / 总静音 / 三类音量), 只发改动的字段;
+   * 设备侧落 NVS 并立即生效. 同样只发不等. sounds = [按键, 旋钮, agent].
+   */
+  writeConfig(update: {
+    brightness?: number;
+    muted?: boolean;
+    sounds?: readonly number[];
+  }): boolean {
     if (!this.worker) return false;
-    return this.send("writeSettings", { brightness, volume });
+    return this.send("writeConfig", update);
+  }
+
+  /** 让设备用某一类当前音量试听它的代表音 (0=按键 1=旋钮 2=agent) */
+  previewSound(cat: number): boolean {
+    if (!this.worker) return false;
+    return this.send("previewSound", { cat });
   }
 
   dispose(): void {

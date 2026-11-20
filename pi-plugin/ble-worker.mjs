@@ -9,8 +9,10 @@
  * 协议 (stdin/stdout, 每行一个 JSON):
  *   主 → worker: { "op": "scan", "id": 1, "ms": 8000 }
  *              | { "op": "connect", "id": 2, "name": "AgentDock-XX" }
- *              | { "op": "writeState", "state": "busy" }
- *              | { "op": "writeSettings", "brightness": 80, "volume": 60 }
+ *              | { "op": "writeState", "state": "busy", "then": "idle"? }
+ *              | { "op": "writeConfig", "brightness": 80, "muted": false,
+ *                  "sounds": [100, 60, 100] }   (字段均可选)
+ *              | { "op": "previewSound", "cat": 0|1|2 }
  *              | { "op": "refreshRssi", "id": 3 }
  *              | { "op": "dispose" }
  *   worker → 主: { "type": "log", "args": [...] }
@@ -269,25 +271,40 @@ async function refreshRssi() {
   return lastRssi;
 }
 
-async function writeState(state) {
+async function writeState(state, then) {
   if (!stateChar) return;
+  const payload = then ? { t: "s", st: state, then } : { t: "s", st: state };
   try {
-    await stateChar.writeAsync(Buffer.from(JSON.stringify({ t: "s", st: state }), "utf8"), false);
+    await stateChar.writeAsync(Buffer.from(JSON.stringify(payload), "utf8"), false);
   } catch (e) {
     log("状态写入失败:", e?.message ?? e);
   }
 }
 
-/** 亮度/音量 (0~100): 设备侧落 NVS, 立即生效 */
-async function writeSettings(brightness, volume) {
+/** 设置 (亮度/静音/三类音量): 设备侧落 NVS, 立即生效; 只发改动字段 */
+async function writeConfig(body) {
+  if (!stateChar) return;
+  const payload = { t: "cfg" };
+  if (typeof body.brightness === "number") payload.b = body.brightness;
+  if (typeof body.muted === "boolean") payload.m = body.muted ? 1 : 0;
+  if (Array.isArray(body.sounds)) payload.s = body.sounds.map((v) => Number(v) || 0);
+  try {
+    await stateChar.writeAsync(Buffer.from(JSON.stringify(payload), "utf8"), false);
+  } catch (e) {
+    log("设置写入失败:", e?.message ?? e);
+  }
+}
+
+/** 试听某一类声音 (0=按键 1=旋钮 2=agent) */
+async function previewSound(cat) {
   if (!stateChar) return;
   try {
     await stateChar.writeAsync(
-      Buffer.from(JSON.stringify({ t: "cfg", b: brightness, v: volume }), "utf8"),
+      Buffer.from(JSON.stringify({ t: "pv", c: Number(cat) || 0 }), "utf8"),
       false,
     );
   } catch (e) {
-    log("设置写入失败:", e?.message ?? e);
+    log("试听写入失败:", e?.message ?? e);
   }
 }
 
@@ -298,6 +315,9 @@ async function writeSettings(brightness, volume) {
 const DIRECT = process.env.WORKER_DIRECT === "1";
 
 let stdinBuf = "";
+/* 串行执行: 面板会连续发「先设音量再试听」这类报文, 并发处理会让试听
+ * 用旧音量播 (BLE 写入本身也并非线程安全). 一个 promise 链保证到达顺序. */
+let opChain = Promise.resolve();
 process.stdin.setEncoding("utf8");
 process.stdin.on("data", (chunk) => {
   if (DIRECT) return;
@@ -314,7 +334,7 @@ process.stdin.on("data", (chunk) => {
       log("非法请求:", line.slice(0, 120));
       continue;
     }
-    void handle(req);
+    opChain = opChain.then(() => handle(req)).catch(() => {});
   }
 });
 
@@ -344,12 +364,16 @@ async function handle(req) {
         break;
       }
       case "writeState":
-        await writeState(req.state);
+        await writeState(req.state, req.then);
         /* 回包即使调用方不等: 避免主进程侧留一个永远不 resolve 的 pending */
         if (typeof req.id === "number") send({ type: "result", id: req.id, ok: true });
         break;
-      case "writeSettings":
-        await writeSettings(req.brightness, req.volume);
+      case "writeConfig":
+        await writeConfig(req);
+        if (typeof req.id === "number") send({ type: "result", id: req.id, ok: true });
+        break;
+      case "previewSound":
+        await previewSound(req.cat);
         if (typeof req.id === "number") send({ type: "result", id: req.id, ok: true });
         break;
       case "refreshRssi": {

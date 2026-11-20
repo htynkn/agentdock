@@ -58,10 +58,14 @@ static deck_ctx_t s_deck = { .conn = 0xFFFF };
 static struct ble_gap_event_listener s_deck_listener;
 
 /* STATE char 报文类型:
- *   {"t":"s","st":"idle|busy|done|error|demo"}    agent 状态 → 灯效
- *   {"t":"cfg","b":0~100,"v":0~100}               LED 亮度 / 蜂鸣器音量 (落 NVS)
+ *   {"t":"s","st":"idle|busy|attention"}            持久状态 → 灯效
+ *   {"t":"s","st":"done|error|demo","then":"idle"}  瞬态特效 + 结束后回到的状态
+ *   {"t":"cfg","b":0~100,"m":0|1,"s":[key,knob,agent]} 亮度 / 总静音 / 三类音量 (落 NVS)
+ *   {"t":"pv","c":0|1|2}                            试听某一类声音 (面板调音量时)
  */
-static const char *STATE_NAMES[] = { "idle", "busy", "done", "error", "demo" };
+static const char *STATE_NAMES[] = { "idle", "busy", "done", "error", "attention", "demo" };
+#define STATE_COUNT ((int)(sizeof(STATE_NAMES) / sizeof(STATE_NAMES[0])))
+_Static_assert(STATE_COUNT == DECK_STATE_DEMO + 1, "状态名表与 deck_state_t 不齐");
 
 /* 从 JSON 里取整型字段 (设备侧只收这几个定长报文, 不引入 JSON 解析器) */
 static int json_int(const char *json, const char *key, int def)
@@ -69,6 +73,50 @@ static int json_int(const char *json, const char *key, int def)
     const char *p = strstr(json, key);
     if (!p) return def;
     return (int)strtol(p + strlen(key), NULL, 10);
+}
+
+/* 取 "key":"value" 的字符串值; key 需带开头的引号 (例如 "\"then\":\"") */
+static bool json_str(const char *json, const char *key, char *out, size_t n)
+{
+    const char *p = strstr(json, key);
+    if (!p) return false;
+    p += strlen(key);
+    const char *q = strchr(p, '"');
+    if (!q) return false;
+    size_t len = (size_t)(q - p);
+    if (len >= n) len = n - 1;
+    memcpy(out, p, len);
+    out[len] = 0;
+    return true;
+}
+
+/* 取 "key":[a,b,c] 的前 max 个整数, 返回实际个数 */
+static int json_int_list(const char *json, const char *key, int *out, int max)
+{
+    const char *p = strstr(json, key);
+    if (!p) return 0;
+    p += strlen(key);
+    while (*p == ' ') p++;
+    if (*p != '[') return 0;
+    p++;
+    int n = 0;
+    while (n < max && *p) {
+        char *end = NULL;
+        const long v = strtol(p, &end, 10);
+        if (end == p) break;
+        out[n++] = (int)v;
+        p = end;
+        while (*p == ' ') p++;
+        if (*p != ',') break;
+        p++;
+    }
+    return n;
+}
+
+static uint8_t clamp_pct(int v)
+{
+    if (v < 0) return 0;
+    return v > 100 ? 100 : (uint8_t)v;
 }
 
 /* ---------------- STATE char 写入处理 ---------------- */
@@ -81,18 +129,37 @@ static int on_state_write(uint16_t conn, uint16_t attr,
     memcpy(buf, ctx->om->om_data, len);
     buf[len] = 0;
 
-    /* 设置报文: 亮度/音量, 立即生效并持久化 */
+    /* 设置报文: 亮度 / 总静音 / 三类音量; 字段均可选, 面板只发改动的那一项 */
     if (strstr(buf, "\"t\":\"cfg\"")) {
         const int b = json_int(buf, "\"b\":", -1);
-        const int v = json_int(buf, "\"v\":", -1);
-        if (b >= 0) fx_set_brightness((uint8_t)b);
-        if (v >= 0 && (uint8_t)v != fx_get_volume()) {
-            fx_set_volume((uint8_t)v);
-            /* 面板每改一档都会发一次 cfg → 用新音量试听一个短音。
-             * 否则调音量时只有 LED 在变, 完全听不出差别 (0% 就是静音)。 */
-            fx_play(FX_PREVIEW);
+        const int m = json_int(buf, "\"m\":", -1);
+        int vols[SOUND_CAT_COUNT];
+        const int n = json_int_list(buf, "\"s\":", vols, SOUND_CAT_COUNT);
+        if (b >= 0) fx_set_brightness(clamp_pct(b));
+        if (m >= 0) fx_set_muted(m != 0);
+        for (int i = 0; i < n; i++) fx_set_sound_volume((sound_cat_t)i, clamp_pct(vols[i]));
+
+        /* 兼容旧插件: 只发一个 v, 当作三类音量的共同值 */
+        const int legacy = json_int(buf, "\"v\":", -1);
+        if (legacy >= 0) {
+            for (int i = 0; i < SOUND_CAT_COUNT; i++) {
+                fx_set_sound_volume((sound_cat_t)i, clamp_pct(legacy));
+            }
         }
-        ESP_LOGI(TAG, "设置 → 亮度 %u%% 音量 %u%%", fx_get_brightness(), fx_get_volume());
+        ESP_LOGI(TAG, "设置 → 亮度 %u%% 静音 %s 音量 %u/%u/%u",
+                 fx_get_brightness(), fx_is_muted() ? "开" : "关",
+                 fx_get_sound_volume(SOUND_KEY), fx_get_sound_volume(SOUND_KNOB),
+                 fx_get_sound_volume(SOUND_AGENT));
+        return 0;
+    }
+
+    /* 试听: 面板调某一类音量时, 用该类当前音量播它的代表音 */
+    if (strstr(buf, "\"t\":\"pv\"")) {
+        const int c = json_int(buf, "\"c\":", -1);
+        if (c >= 0 && c < SOUND_CAT_COUNT) {
+            fx_preview((sound_cat_t)c);
+            ESP_LOGI(TAG, "试听声音类别 %d", c);
+        }
         return 0;
     }
 
@@ -102,12 +169,33 @@ static int on_state_write(uint16_t conn, uint16_t attr,
         return BLE_ATT_ERR_UNLIKELY;
     }
     st += 6;
-    for (int i = 0; i < (int)(sizeof(STATE_NAMES) / sizeof(STATE_NAMES[0])); i++) {
-        if (strncmp(st, STATE_NAMES[i], strlen(STATE_NAMES[i])) == 0) {
-            ESP_LOGI(TAG, "agent 状态 → %s", STATE_NAMES[i]);
-            fx_set_agent_state((deck_state_t)i);
-            return 0;
+    for (int i = 0; i < STATE_COUNT; i++) {
+        if (strncmp(st, STATE_NAMES[i], strlen(STATE_NAMES[i])) != 0) continue;
+
+        /* 瞬态状态可带 then: 特效播完回到哪个状态 (缺省 = 保持原状态) */
+        deck_state_t then = DECK_STATE_KEEP;
+        char then_buf[16];
+        if (json_str(buf, "\"then\":\"", then_buf, sizeof(then_buf))) {
+            for (int k = 0; k < STATE_COUNT; k++) {
+                if (strcmp(then_buf, STATE_NAMES[k]) == 0) {
+                    then = (deck_state_t)k;
+                    break;
+                }
+            }
         }
+        const deck_state_t state = (deck_state_t)i;
+        ESP_LOGI(TAG, "agent 状态 → %s (then=%s)", STATE_NAMES[i],
+                 (then == DECK_STATE_KEEP) ? "保持" : STATE_NAMES[then]);
+        fx_set_agent_state(state, then);
+
+        /* 状态提示音 (agent 类别音量); busy/idle/demo 不发声 */
+        switch (state) {
+        case DECK_STATE_DONE:      fx_play(FX_DONE); break;
+        case DECK_STATE_ERROR:     fx_play(FX_ERROR); break;
+        case DECK_STATE_ATTENTION: fx_play(FX_ATTENTION); break;
+        default: break;
+        }
+        return 0;
     }
     ESP_LOGW(TAG, "未知状态: %s", st);
     return BLE_ATT_ERR_UNLIKELY;
